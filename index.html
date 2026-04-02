@@ -1,0 +1,1445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aurora Map</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/topojson-client@3/dist/topojson-client.min.js"></script>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        :root {
+            --bg-primary:    #070b14;
+            --bg-secondary:  #0a0e1a;
+            --bg-panel:      #0d1421;
+            --bg-card:       #0f1827;
+            --border:        #1a2540;
+            --border-bright: #253554;
+            --text-primary:  #c8d8e8;
+            --text-secondary:#6a8aaa;
+            --text-dim:      #3a5060;
+            --accent-green:  #00ffa3;
+            --accent-purple: #9d71ff;
+            --accent-blue:   #00b4d8;
+            --kp-low:        #4caf50;
+            --kp-moderate:   #ffeb3b;
+            --kp-active:     #ff9800;
+            --kp-storm:      #f44336;
+            --font: 'Consolas', 'Courier New', 'Lucida Console', monospace;
+        }
+        html, body { height: 100%; overflow: hidden; }
+        body {
+            font-family: var(--font);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        /* ── Header ───────────────────────────────────────── */
+        header {
+            height: 52px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 18px;
+            flex-shrink: 0;
+            z-index: 20;
+            position: relative;
+        }
+        .header-left { display: flex; align-items: center; gap: 12px; }
+        .aurora-svg-icon { display: block; }
+        .app-title {
+            font-size: 1.05rem;
+            font-weight: 700;
+            color: var(--accent-green);
+            letter-spacing: 0.22em;
+            text-transform: uppercase;
+        }
+        .app-subtitle {
+            font-size: 0.58rem;
+            color: var(--text-dim);
+            letter-spacing: 0.12em;
+            margin-top: 1px;
+        }
+        .header-right { display: flex; align-items: center; gap: 14px; }
+        .live-badge {
+            display: flex; align-items: center; gap: 7px;
+            padding: 5px 10px;
+            border: 1px solid var(--border-bright);
+            background: rgba(0,255,163,0.04);
+        }
+        .live-dot {
+            width: 6px; height: 6px; border-radius: 50%;
+            background: var(--accent-green);
+            animation: pulse-dot 2s infinite;
+        }
+        @keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:0.25} }
+        .live-label { font-size: 0.58rem; color: var(--text-secondary); letter-spacing: 0.12em; }
+        .live-kp-value { font-size: 1rem; font-weight: bold; color: var(--accent-green); }
+
+        /* ── Kp Info tooltip ──────────────────────────────── */
+        .kp-info-btn {
+            width: 16px; height: 16px; border-radius: 50%;
+            border: 1px solid var(--text-dim);
+            background: transparent; color: var(--text-dim);
+            font-family: var(--font); font-size: 0.55rem;
+            cursor: pointer; display: flex; align-items: center; justify-content: center;
+            flex-shrink: 0; transition: all 0.15s; line-height: 1;
+            padding: 0;
+        }
+        .kp-info-btn:hover, .kp-info-btn.active {
+            border-color: var(--accent-green); color: var(--accent-green);
+            background: rgba(0,255,163,0.08);
+        }
+        #kp-tooltip {
+            display: none;
+            position: absolute; top: 56px; right: 12px;
+            width: 310px;
+            background: var(--bg-panel);
+            border: 1px solid var(--border-bright);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.7);
+            z-index: 100;
+            padding: 14px 16px 12px;
+        }
+        #kp-tooltip.visible { display: block; }
+        .kp-tooltip-title {
+            font-size: 0.58rem; color: var(--accent-green);
+            letter-spacing: 0.2em; text-transform: uppercase;
+            border-bottom: 1px solid var(--border); padding-bottom: 7px; margin-bottom: 10px;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .kp-tooltip-close {
+            cursor: pointer; color: var(--text-dim); font-size: 0.7rem;
+            background: none; border: none; font-family: var(--font);
+            padding: 0; line-height: 1;
+        }
+        .kp-tooltip-close:hover { color: var(--text-primary); }
+        .kp-table { width: 100%; border-collapse: collapse; }
+        .kp-table th {
+            font-size: 0.48rem; color: var(--text-dim); letter-spacing: 0.14em;
+            text-transform: uppercase; text-align: left;
+            padding: 0 6px 5px; border-bottom: 1px solid var(--border);
+            font-weight: normal;
+        }
+        .kp-table td {
+            font-size: 0.58rem; color: var(--text-secondary);
+            padding: 4px 6px; border-bottom: 1px solid rgba(26,37,64,0.5);
+            letter-spacing: 0.04em; vertical-align: middle;
+        }
+        .kp-table tr:last-child td { border-bottom: none; }
+        .kp-table td:first-child { font-weight: bold; font-size: 0.7rem; }
+        .kp-swatch {
+            display: inline-block; width: 8px; height: 8px;
+            border-radius: 50%; margin-right: 5px; vertical-align: middle;
+        }
+        .kp-tooltip-note {
+            margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border);
+            font-size: 0.48rem; color: var(--text-dim); letter-spacing: 0.07em; line-height: 1.7;
+        }
+
+        /* ── App body ─────────────────────────────────────── */
+        .app-body {
+            display: flex;
+            height: calc(100vh - 52px);
+            overflow: hidden;
+        }
+
+        /* ── Map ──────────────────────────────────────────── */
+        #map-container {
+            flex: 1;
+            position: relative;
+            background: #020610;
+            overflow: hidden;
+            min-width: 0;
+        }
+        #world-map { width: 100%; height: 100%; display: block; }
+        .map-hint {
+            position: absolute; bottom: 10px; left: 12px;
+            font-size: 0.55rem; color: var(--text-dim);
+            letter-spacing: 0.1em; pointer-events: none;
+        }
+        .map-zoom-ctrl {
+            position: absolute; top: 10px; right: 10px;
+            display: flex; flex-direction: column; gap: 2px;
+        }
+        .zoom-btn {
+            width: 26px; height: 26px; background: var(--bg-panel);
+            border: 1px solid var(--border); color: var(--text-secondary);
+            font-family: var(--font); font-size: 14px; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            transition: all 0.15s;
+        }
+        .zoom-btn:hover { background: var(--border); color: var(--text-primary); }
+
+        /* ── D3 map element styles ────────────────────────── */
+        .sphere      { fill: #010610; }
+        .graticule   { fill: none; stroke: #0c1828; stroke-width: 0.5px; }
+        .country     { fill: #0c1c30; stroke: #162840; stroke-width: 0.4px; transition: fill 0.15s; }
+        .country:hover { fill: #122238; }
+        .aurora-band { fill: rgba(0,255,163,0.035); stroke: rgba(0,255,163,0.09); stroke-width: 0.8px; }
+        .city-ring-outer { fill: none; stroke: rgba(0,255,163,0.2); stroke-width: 1px; }
+        .city-dot    { fill: #00ffa3; stroke: rgba(0,255,163,0.6); stroke-width: 1px; cursor: pointer; }
+        .city-label  {
+            fill: #00ffa3; font-family: var(--font); font-size: 9.5px;
+            letter-spacing: 0.05em; pointer-events: none; opacity: 0.85;
+        }
+        .city-marker.active .city-dot    { fill: #fff; r: 7; stroke: #00ffa3; stroke-width: 2px; }
+        .city-marker.active .city-ring-outer { stroke: rgba(0,255,163,0.55); }
+        .city-marker { cursor: pointer; }
+
+        /* ── Right data panel ─────────────────────────────── */
+        #data-panel {
+            width: 400px;
+            min-width: 310px;
+            background: var(--bg-secondary);
+            border-left: 1px solid var(--border);
+            display: flex; flex-direction: column;
+            overflow: hidden; flex-shrink: 0;
+        }
+        #panel-content {
+            flex: 1; overflow-y: auto; padding: 14px;
+            display: flex; flex-direction: column;
+        }
+        #panel-content::-webkit-scrollbar { width: 3px; }
+        #panel-content::-webkit-scrollbar-track { background: var(--bg-primary); }
+        #panel-content::-webkit-scrollbar-thumb { background: var(--border-bright); }
+
+        /* ── Welcome state ────────────────────────────────── */
+        #welcome-state {
+            flex: 1; display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            gap: 14px; text-align: center; padding: 30px 20px;
+        }
+        .welcome-title  { font-size: 0.8rem; color: var(--text-secondary); letter-spacing: 0.2em; }
+        .welcome-desc   { font-size: 0.65rem; color: var(--text-dim); letter-spacing: 0.06em; line-height: 1.8; }
+        .city-list-hint { margin-top: 10px; display: flex; flex-direction: column; gap: 3px; width: 100%; text-align: left; }
+        .city-hint-item {
+            font-size: 0.65rem; color: var(--text-dim);
+            padding: 5px 10px; border: 1px solid var(--border);
+            border-left: 2px solid var(--accent-green);
+            cursor: pointer; transition: all 0.15s;
+        }
+        .city-hint-item:hover { background: rgba(0,255,163,0.05); color: var(--text-primary); }
+
+        /* ── City state ───────────────────────────────────── */
+        #city-state { display: flex; flex-direction: column; gap: 14px; }
+
+        .section-header {
+            display: flex; align-items: center; justify-content: space-between;
+            margin-bottom: 7px;
+        }
+        .section-title  { font-size: 0.58rem; color: var(--text-secondary); letter-spacing: 0.2em; text-transform: uppercase; }
+        .section-badge  {
+            font-size: 0.52rem; color: var(--accent-green); letter-spacing: 0.1em;
+            padding: 2px 7px; border: 1px solid rgba(0,255,163,0.3);
+        }
+
+        /* ── City header card ─────────────────────────────── */
+        .city-header {
+            padding: 12px 14px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-bright);
+        }
+        .back-btn {
+            display: flex; align-items: center; gap: 6px;
+            font-family: var(--font); font-size: 0.54rem;
+            color: var(--text-dim); letter-spacing: 0.14em;
+            background: none; border: none; cursor: pointer;
+            padding: 0 0 8px; transition: color 0.15s;
+        }
+        .back-btn:hover { color: var(--accent-green); }
+        .back-arrow { font-size: 0.7rem; line-height: 1; }
+        .city-name { font-size: 1.15rem; font-weight: 700; color: var(--accent-green); letter-spacing: 0.12em; text-transform: uppercase; }
+        .city-loc  { font-size: 0.62rem; color: var(--text-secondary); letter-spacing: 0.1em; margin-top: 2px; }
+        .city-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 10px; }
+        .meta-item { background: var(--bg-secondary); padding: 6px 9px; }
+        .meta-lbl  { font-size: 0.52rem; color: var(--text-dim); letter-spacing: 0.12em; text-transform: uppercase; }
+        .meta-val  { font-size: 0.78rem; color: var(--text-primary); margin-top: 2px; }
+
+        /* ── KP Chart ─────────────────────────────────────── */
+        #kp-chart { width: 100%; height: 155px; overflow: visible; }
+        .kp-bar    { cursor: pointer; transition: opacity 0.1s; }
+        .kp-bar:hover { opacity: 0.75 !important; }
+        .kp-legend { display: flex; flex-direction: column; gap: 5px; margin-top: 6px; }
+        .kp-legend-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+        .legend-item { display: flex; align-items: center; gap: 4px; font-size: 0.52rem; color: var(--text-secondary); }
+        .legend-dot  { width: 8px; height: 8px; flex-shrink: 0; }
+        .legend-threshold {
+            display: flex; align-items: center; gap: 6px;
+            font-size: 0.52rem; color: var(--text-secondary);
+            padding-top: 5px; border-top: 1px solid var(--border);
+        }
+        .legend-dash {
+            width: 18px; height: 0; border-top: 1.5px dashed rgba(0,255,163,0.6);
+            flex-shrink: 0;
+        }
+        .legend-threshold-city { color: var(--accent-green); }
+
+        /* ── Month selector ───────────────────────────────── */
+        .month-grid-wrap {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            padding: 10px 10px 6px;
+        }
+        .month-grid {
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            gap: 2px;
+        }
+        .month-btn {
+            text-align: center;
+            font-size: 0.5rem;
+            color: var(--text-dim);
+            letter-spacing: 0.04em;
+            cursor: pointer;
+            padding: 4px 0 3px;
+            border-top: 2px solid transparent;
+            transition: all 0.12s;
+            user-select: none;
+        }
+        .month-btn:hover { color: var(--text-primary); border-top-color: var(--border-bright); }
+        .month-btn.active { color: var(--accent-green); border-top-color: var(--accent-green); }
+        .month-btn.peak   { color: var(--kp-active); }
+        .month-btn.active.peak { color: var(--accent-green); }
+        .peak-tick { font-size: 0.42rem; color: var(--kp-active); display: block; line-height: 1; }
+
+        .month-info-row {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 8px 11px; margin-top: 8px;
+            background: rgba(0,255,163,0.04);
+            border: 1px solid rgba(0,255,163,0.18);
+            border-left: 3px solid var(--accent-green);
+        }
+        .mon-name  { font-size: 0.88rem; font-weight: 700; color: var(--accent-green); letter-spacing: 0.1em; }
+        .mon-kp    { display: flex; align-items: baseline; gap: 4px; }
+        .mon-kp-val { font-size: 1.3rem; font-weight: bold; }
+        .mon-kp-unit{ font-size: 0.58rem; color: var(--text-secondary); }
+        .vis-badge {
+            font-size: 0.58rem; padding: 3px 8px;
+            border: 1px solid; letter-spacing: 0.08em;
+        }
+
+        /* ── Photo gallery ────────────────────────────────── */
+        .photo-loading {
+            height: 100px; display: flex; align-items: center; justify-content: center;
+            border: 1px solid var(--border); background: var(--bg-card);
+        }
+        .loading-text {
+            font-size: 0.6rem; color: var(--text-dim); letter-spacing: 0.15em;
+            animation: blink 1.4s infinite;
+        }
+        @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
+        .photo-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 4px;
+        }
+        .photo-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            overflow: hidden;
+            transition: border-color 0.12s;
+        }
+        .photo-card:hover { border-color: var(--accent-green); }
+        .photo-thumb {
+            width: 100%; height: 100px;
+            object-fit: cover; display: block;
+            background: #050b18; cursor: pointer;
+        }
+        .photo-cap { padding: 5px 7px; }
+        .photo-author { font-size: 0.52rem; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .photo-date   { font-size: 0.52rem; color: var(--text-secondary); }
+        .photo-src    {
+            display: block; font-size: 0.48rem; color: var(--accent-blue);
+            text-decoration: none; margin-top: 2px;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .photo-src:hover { text-decoration: underline; }
+        .no-photos {
+            padding: 18px; text-align: center;
+            font-size: 0.6rem; color: var(--text-dim);
+            border: 1px solid var(--border); letter-spacing: 0.1em; line-height: 1.8;
+        }
+        .photo-attrib {
+            font-size: 0.48rem; color: var(--text-dim);
+            margin-top: 6px; text-align: right; letter-spacing: 0.08em;
+        }
+
+        /* ── Aurora Oval Toggle ──────────────────────────── */
+        #aurora-canvas {
+            position: absolute; top: 0; left: 0;
+            pointer-events: none;
+            opacity: 0; transition: opacity 0.4s;
+        }
+        #aurora-canvas.visible { opacity: 1; }
+        .oval-ctrl {
+            position: absolute; top: 10px; left: 10px;
+            display: flex; flex-direction: column; gap: 4px;
+            z-index: 10;
+        }
+        .oval-toggle-wrap {
+            display: flex; align-items: center; gap: 8px;
+            padding: 6px 10px;
+            background: rgba(7,11,20,0.88);
+            border: 1px solid var(--border-bright);
+            backdrop-filter: blur(4px);
+            cursor: pointer; user-select: none;
+        }
+        .oval-toggle-wrap:hover { border-color: var(--accent-green); }
+        .oval-checkbox {
+            appearance: none; -webkit-appearance: none;
+            width: 13px; height: 13px;
+            border: 1px solid var(--text-dim);
+            background: transparent; cursor: pointer; position: relative;
+            flex-shrink: 0; transition: all 0.15s;
+        }
+        .oval-checkbox:checked {
+            background: var(--accent-green);
+            border-color: var(--accent-green);
+        }
+        .oval-checkbox:checked::after {
+            content: ''; position: absolute;
+            left: 3px; top: 1px;
+            width: 5px; height: 7px;
+            border: 1.5px solid #070b14;
+            border-top: none; border-left: none;
+            transform: rotate(45deg);
+        }
+        .oval-label {
+            font-size: 0.54rem; letter-spacing: 0.14em;
+            color: var(--text-secondary); white-space: nowrap;
+        }
+        .oval-live-dot {
+            width: 5px; height: 5px; border-radius: 50%;
+            background: var(--accent-green); flex-shrink: 0;
+            animation: pulse-dot 2s infinite;
+        }
+        .oval-status {
+            font-size: 0.48rem; color: var(--text-dim);
+            letter-spacing: 0.1em; padding: 0 2px;
+        }
+        .oval-legend {
+            display: flex; gap: 4px; align-items: center;
+            padding: 5px 10px;
+            background: rgba(7,11,20,0.85);
+            border: 1px solid var(--border);
+            border-top: none;
+        }
+        .oval-legend-grad {
+            width: 80px; height: 7px;
+            background: linear-gradient(to right,
+                rgba(0,120,60,0), rgba(0,200,100,0.6),
+                rgba(0,255,163,0.85), rgba(120,255,220,1), #fff);
+            border: 1px solid rgba(0,255,163,0.2);
+        }
+        .oval-legend-lbl {
+            font-size: 0.44rem; color: var(--text-dim);
+            letter-spacing: 0.08em;
+        }
+
+        /* ── Responsive ───────────────────────────────────── */
+        @media (max-width: 780px) {
+            .app-body   { flex-direction: column; }
+            #map-container { height: 46vh; min-height: 260px; }
+            #data-panel { width: 100%; height: 54vh; border-left: none; border-top: 1px solid var(--border); min-width: unset; }
+            .app-subtitle { display: none; }
+            .live-label   { display: none; }
+        }
+        @media (max-width: 480px) {
+            .city-meta { grid-template-columns: 1fr; }
+            .photo-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <svg class="aurora-svg-icon" width="30" height="30" viewBox="0 0 30 30" fill="none">
+      <path d="M3 22 Q8 8 15 13 Q22 18 27 5" stroke="#00ffa3" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+      <path d="M1 26 Q7 15 15 18 Q23 21 29 11" stroke="#9d71ff" stroke-width="1.1" fill="none" stroke-linecap="round" opacity="0.7"/>
+      <path d="M5 24 Q10 14 15 16 Q20 18 25 9" stroke="#00b4d8" stroke-width="0.8" fill="none" stroke-linecap="round" opacity="0.5"/>
+      <circle cx="15" cy="26" r="1.4" fill="#00ffa3" opacity="0.4"/>
+    </svg>
+    <div>
+      <div class="app-title">Aurora Map</div>
+      <div class="app-subtitle">GEOMAGNETIC ACTIVITY · Kp INDEX VISUALIZATION · NOAA REAL-TIME DATA</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="live-badge">
+      <div class="live-dot"></div>
+      <span class="live-label">LIVE Kp</span>
+      <span class="live-kp-value" id="live-kp-display">—</span>
+    </div>
+    <button class="kp-info-btn" id="kp-info-btn" title="What is Kp?">i</button>
+  </div>
+</header>
+
+<div id="kp-tooltip">
+  <div class="kp-tooltip-title">
+    PLANETARY Kp INDEX — WHAT DOES IT MEAN?
+    <button class="kp-tooltip-close" id="kp-tooltip-close">✕</button>
+  </div>
+  <table class="kp-table">
+    <thead>
+      <tr>
+        <th>Kp</th>
+        <th>ACTIVITY LEVEL</th>
+        <th>VISIBLE SOUTH TO</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><span class="kp-swatch" style="background:#4caf50"></span>0–2</td>
+        <td>Quiet</td>
+        <td>~70°N — Tromsø, Lapland always</td>
+      </tr>
+      <tr>
+        <td><span class="kp-swatch" style="background:#8bc34a"></span>3</td>
+        <td>Unsettled</td>
+        <td>~65°N — Fairbanks, Yellowknife, Reykjavik</td>
+      </tr>
+      <tr>
+        <td><span class="kp-swatch" style="background:#ffeb3b"></span>4</td>
+        <td>Active</td>
+        <td>~60°N — southern Norway, northern Canada</td>
+      </tr>
+      <tr>
+        <td><span class="kp-swatch" style="background:#ff9800"></span>5–6</td>
+        <td>Minor storm</td>
+        <td>~55°N — Scotland, northern US border</td>
+      </tr>
+      <tr>
+        <td><span class="kp-swatch" style="background:#f44336"></span>7–8</td>
+        <td>Major storm</td>
+        <td>~50°N — Whidbey Island, northern France</td>
+      </tr>
+      <tr>
+        <td><span class="kp-swatch" style="background:#e040fb"></span>9</td>
+        <td>Extreme storm</td>
+        <td>~40°N — New York, Madrid (rare)</td>
+      </tr>
+    </tbody>
+  </table>
+  <div class="kp-tooltip-note">
+    Kp is a <strong style="color:var(--text-secondary)">global</strong> index — one value for the entire Earth, averaged from ~13 magnetometer
+    stations at 44–60°N geomagnetic latitude. It does not vary by location.
+    Each city has a <strong style="color:var(--text-secondary)">minimum Kp threshold</strong> at which the auroral oval expands
+    far enough equatorward to be visible there. Source: GFZ Potsdam / NOAA SWPC.
+  </div>
+</div>
+
+<div class="app-body">
+  <div id="map-container">
+    <svg id="world-map"></svg>
+    <canvas id="aurora-canvas"></canvas>
+    <div class="oval-ctrl">
+      <label class="oval-toggle-wrap" for="oval-checkbox">
+        <input type="checkbox" id="oval-checkbox" class="oval-checkbox">
+        <div class="oval-live-dot"></div>
+        <span class="oval-label">AURORA OVAL</span>
+      </label>
+      <div class="oval-legend" id="oval-legend" style="display:none">
+        <span class="oval-legend-lbl">LOW</span>
+        <div class="oval-legend-grad"></div>
+        <span class="oval-legend-lbl">HIGH</span>
+        <span class="oval-status" id="oval-status">—</span>
+      </div>
+    </div>
+    <div class="map-hint">NATURAL EARTH PROJECTION · CLICK CITY MARKER TO VIEW AURORA DATA</div>
+    <div class="map-zoom-ctrl">
+      <button class="zoom-btn" id="btn-zoom-in" title="Zoom in">+</button>
+      <button class="zoom-btn" id="btn-zoom-out" title="Zoom out">−</button>
+      <button class="zoom-btn" id="btn-zoom-reset" title="Reset view" style="font-size:9px">RST</button>
+    </div>
+  </div>
+
+  <div id="data-panel">
+    <div id="panel-content">
+
+      <!-- Welcome state -->
+      <div id="welcome-state">
+        <svg width="52" height="52" viewBox="0 0 52 52" style="opacity:0.28">
+          <path d="M6 38 Q13 20 26 26 Q39 32 46 14" stroke="#00ffa3" stroke-width="2" fill="none" stroke-linecap="round"/>
+          <path d="M3 44 Q11 28 26 33 Q41 38 49 22" stroke="#9d71ff" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+          <circle cx="26" cy="42" r="2.5" fill="#00ffa3" opacity="0.5"/>
+          <circle cx="16" cy="44" r="1.8" fill="#00b4d8" opacity="0.4"/>
+          <circle cx="36" cy="43" r="1.4" fill="#9d71ff" opacity="0.4"/>
+        </svg>
+        <div class="welcome-title">SELECT A LOCATION</div>
+        <div class="welcome-desc">Click a highlighted city marker on the<br>map to view Kp index data &amp; aurora photos</div>
+        <div class="city-list-hint" id="city-list-hint"></div>
+      </div>
+
+      <!-- City state -->
+      <div id="city-state" style="display:none">
+
+        <button class="back-btn" id="back-btn">
+          <span class="back-arrow">←</span> ALL LOCATIONS
+        </button>
+
+        <!-- City header -->
+        <div class="city-header">
+          <div class="city-name" id="city-name-el"></div>
+          <div class="city-loc"  id="city-loc-el"></div>
+          <div class="city-meta" id="city-meta-el"></div>
+        </div>
+
+        <!-- KP Chart -->
+        <div id="kp-section">
+          <div class="section-header">
+            <span class="section-title" id="kp-section-title">Kp INDEX · 12-MONTH AVERAGE</span>
+            <span class="section-badge" id="kp-source-badge">HISTORICAL AVG</span>
+          </div>
+          <svg id="kp-chart"></svg>
+          <div class="kp-legend">
+            <div class="kp-legend-row">
+              <div class="legend-item"><div class="legend-dot" style="background:#4caf50"></div>Quiet (0–2)</div>
+              <div class="legend-item"><div class="legend-dot" style="background:#ffeb3b"></div>Unsettled (3–4)</div>
+              <div class="legend-item"><div class="legend-dot" style="background:#ff9800"></div>Active (5–6)</div>
+              <div class="legend-item"><div class="legend-dot" style="background:#f44336"></div>Storm (7–9)</div>
+            </div>
+            <div class="legend-threshold" id="legend-threshold">
+              <div class="legend-dash"></div>
+              VISIBILITY THRESHOLD — aurora reaches <span class="legend-threshold-city" id="legend-threshold-city">&nbsp;</span>&nbsp;when Kp ≥ <span class="legend-threshold-city" id="legend-threshold-kp">&nbsp;</span>
+            </div>
+          </div>
+          <div id="kp-footnote" style="margin-top:5px;font-size:0.48rem;color:var(--text-dim);letter-spacing:0.08em;display:none">
+            † JUN/JUL suppressed: midnight sun limits dark-sky viewing at this latitude
+          </div>
+        </div>
+
+        <!-- Month selector -->
+        <div id="month-section">
+          <div class="section-header">
+            <span class="section-title">SELECT MONTH</span>
+            <span class="section-badge" id="peak-badge">PEAK: —</span>
+          </div>
+          <div class="month-grid-wrap">
+            <div class="month-grid" id="month-grid"></div>
+          </div>
+          <div class="month-info-row" id="month-info-row">
+            <div class="mon-name" id="mon-name-el">—</div>
+            <div class="mon-kp">
+              <span class="mon-kp-val" id="mon-kp-val">—</span>
+              <span class="mon-kp-unit">Kp</span>
+            </div>
+            <div class="vis-badge" id="vis-badge">—</div>
+          </div>
+        </div>
+
+        <!-- Photos -->
+        <div id="photos-section">
+          <div class="section-header">
+            <span class="section-title">AURORA PHOTOGRAPHS</span>
+            <span class="section-badge">WIKIMEDIA COMMONS</span>
+          </div>
+          <div id="photo-gallery"></div>
+        </div>
+
+      </div><!-- /city-state -->
+    </div><!-- /panel-content -->
+  </div><!-- /data-panel -->
+</div><!-- /app-body -->
+
+<script>
+'use strict';
+// ═══════════════════════════════════════════════════════════════════
+//  AURORA MAP · Data & Constants
+// ═══════════════════════════════════════════════════════════════════
+
+const MONTHS_SHORT = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+const MONTHS_FULL  = ['January','February','March','April','May','June',
+                      'July','August','September','October','November','December'];
+
+// Per-city aurora viewing index — effective aurora activity per month.
+// Derived from: global Kp monthly baseline × geomagnetic latitude factor ×
+// dark-sky availability (midnight sun suppresses Jun/Jul at high latitudes).
+//
+// Key seasonal drivers:
+//  • Russell–McPherron effect → equinoctial Kp peaks in Mar & Sep globally
+//  • Sector effect → North American sites peak Sep; Atlantic sites peak Mar;
+//    European (Scandinavian) sites shift peak to Oct as polar night returns
+//  • Midnight sun → Jun/Jul near-zero at 62–70°N regardless of Kp activity
+//  • Polar night → Oct–Feb darkness bonus at Tromsø/Lapland (69–70°N)
+//
+// Source methodology: GFZ Potsdam historical Kp, NOAA SWPC aurora oval
+// literature, Nevanlinna & Pulkkinen (2001), Stamper et al. aurora frequency.
+//   Jan   Feb   Mar   Apr   May   Jun   Jul   Aug   Sep   Oct   Nov   Dec
+const CITY_KP = {
+  // 64.8°N · geomag ~65°N · North American sector · Sep equinox > Mar
+  // Midnight sun: Jun–Jul effectively no dark sky. Oct/Nov solid darkness.
+  fairbanks:   [2.8, 3.1, 3.2, 2.1, 0.7, 0.1, 0.1, 1.0, 3.5, 3.4, 3.1, 2.8],
+
+  // 48.2°N · geomag ~50°N · Pacific sector · no midnight sun problem
+  // Aurora requires major storm (Kp ≥ 5); monthly averages never reach threshold.
+  // Gentle equinoctial shape; Sep marginally higher than Mar.
+  whidbey:     [1.3, 1.5, 1.8, 1.6, 1.3, 1.1, 1.0, 1.2, 1.9, 1.7, 1.4, 1.3],
+
+  // 62.5°N · geomag ~63°N · North American sector · similar to Fairbanks
+  // Midnight sun Jun–Jul. Sep equinox dominant.
+  yellowknife: [2.6, 2.9, 3.0, 1.9, 0.6, 0.1, 0.1, 0.9, 3.3, 3.2, 2.9, 2.6],
+
+  // 64.1°N · geomag ~65°N · Atlantic sector · MARCH peak (Atlantic sector bias)
+  // Documented in Nevanlinna & Pulkkinen: Atlantic-sector sites show Mar > Sep.
+  // Midnight sun Jun–Jul comparable to Fairbanks.
+  reykjavik:   [2.6, 2.9, 3.4, 2.0, 0.6, 0.1, 0.1, 0.9, 3.2, 3.1, 2.8, 2.6],
+
+  // 69.6°N · geomag ~67°N · European sector · inside auroral oval
+  // OCTOBER peak: Sep equinoctial boost coincides with polar night returning.
+  // Polar night (no sun): mid-Nov to late Jan → excellent winter viewing.
+  // Midnight sun: mid-May to late Jul → near-zero Jun/Jul.
+  tromso:      [3.8, 3.6, 4.0, 2.5, 0.4, 0.1, 0.1, 1.3, 3.9, 4.5, 4.3, 4.0],
+
+  // 68.9°N · geomag ~66°N · European sector · inside auroral oval
+  // OCTOBER peak: same polar-night + equinoctial mechanism as Tromsø.
+  // Polar night: Dec–Jan. Midnight sun: Jun–Jul.
+  lapland:     [3.6, 3.4, 3.8, 2.3, 0.5, 0.1, 0.1, 1.2, 3.7, 4.3, 4.1, 3.8],
+};
+
+const CITIES = [
+  { id:'fairbanks',  name:'Fairbanks',      state:'Alaska',               country:'USA',
+    lat:64.8401,  lng:-147.7200, minKp:3,
+    tz:'AKST (UTC−9)',
+    desc:'Located near the auroral oval — one of the best aurora sites in the world.',
+    search:'aurora borealis Fairbanks Alaska' },
+  { id:'whidbey',    name:'Whidbey Island',  state:'Washington',           country:'USA',
+    lat:48.1768,  lng:-122.5758, minKp:5,
+    tz:'PST (UTC−8)',
+    desc:'Mid-latitude site. Visible only during elevated geomagnetic storms (Kp ≥ 5).',
+    search:'aurora borealis Washington State Pacific Northwest' },
+  { id:'yellowknife',name:'Yellowknife',     state:'Northwest Territories', country:'Canada',
+    lat:62.4540,  lng:-114.3718, minKp:3,
+    tz:'MST (UTC−7)',
+    desc:'Known as the Aurora Capital of North America. ~240 viewing nights per year.',
+    search:'aurora borealis Yellowknife Canada Northwest Territories' },
+  { id:'reykjavik',  name:'Reykjavik',       state:'Capital Region',        country:'Iceland',
+    lat:64.1265,  lng:-21.8174, minKp:3,
+    tz:'GMT (UTC±0)',
+    desc:'Aurora hunting hub of Iceland. Easy access to dark-sky sites.',
+    search:'aurora borealis Reykjavik Iceland' },
+  { id:'tromso',     name:'Tromsø',          state:'Troms',                 country:'Norway',
+    lat:69.6492,  lng: 18.9553, minKp:2,
+    tz:'CET (UTC+1)',
+    desc:'Situated inside the auroral oval — world-class aurora destination.',
+    search:'aurora borealis Tromsø Norway' },
+  { id:'lapland',    name:'Lapland',         state:'Lappi',                 country:'Finland',
+    lat:68.9219,  lng: 27.5058, minKp:2,
+    tz:'EET (UTC+2)',
+    desc:'Arctic wilderness with 200+ aurora nights per year in full darkness.',
+    search:'aurora borealis Lapland Finland Saariselkä' }
+];
+
+// ═══════════════════════════════════════════════════════════════════
+//  State
+// ═══════════════════════════════════════════════════════════════════
+let selectedCity  = null;
+let selectedMonth = new Date().getUTCMonth(); // 0-indexed, UTC
+let liveKpMonthly = {};   // month-index → computed avg from NOAA
+let photoCache    = {};
+let zoomBehavior, mapSvg, mapG, projection, pathGenerator;
+
+// ═══════════════════════════════════════════════════════════════════
+//  Helpers
+// ═══════════════════════════════════════════════════════════════════
+function kpColor(kp) {
+  if (kp < 3) return '#4caf50';
+  if (kp < 5) return '#ffeb3b';
+  if (kp < 7) return '#ff9800';
+  return '#f44336';
+}
+
+// Returns city-specific monthly Kp. NOAA live data provides a global offset
+// that is blended on top of the per-city baseline.
+function getKp(monthIdx, city) {
+  const base = city ? CITY_KP[city.id][monthIdx] : 2.0;
+  if (liveKpMonthly[monthIdx] !== undefined) {
+    // Scale the live deviation proportionally onto the city baseline
+    const globalBase = [2.1,2.3,2.8,2.6,2.2,1.9,1.8,2.0,2.9,2.7,2.3,2.0][monthIdx];
+    const delta = liveKpMonthly[monthIdx] - globalBase;
+    return Math.max(0, parseFloat((base + delta).toFixed(2)));
+  }
+  return base;
+}
+
+function peakMonth(city) {
+  const vals = MONTHS_SHORT.map((_,i) => getKp(i, city));
+  return vals.indexOf(Math.max(...vals));
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  NOAA Kp Fetch
+// ═══════════════════════════════════════════════════════════════════
+async function fetchNOAAKp() {
+  try {
+    const res  = await fetch('https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json');
+    const data = await res.json();
+    if (!Array.isArray(data) || data.length < 1) return;
+
+    // Latest live value — walk backwards to find most recent valid entry
+    const liveEl = document.getElementById('live-kp-display');
+    let liveKp = NaN;
+    for (let i = data.length - 1; i >= 0; i--) {
+      const v = parseFloat(data[i].Kp);
+      if (isFinite(v) && v >= 0) { liveKp = v; break; }
+    }
+    if (isFinite(liveKp)) {
+      liveEl.textContent = liveKp.toFixed(1);
+      liveEl.style.color = kpColor(liveKp);
+    } else {
+      liveEl.textContent = '—';
+    }
+
+    // Compute per-month averages from returned data (up to 30 days)
+    const grouped = {};
+    data.forEach(row => {
+      const d = new Date(row.time_tag);
+      const m = d.getUTCMonth();
+      const v = parseFloat(row.Kp);
+      if (isFinite(v) && v >= 0) {
+        if (!grouped[m]) grouped[m] = [];
+        grouped[m].push(v);
+      }
+    });
+    Object.keys(grouped).forEach(m => {
+      const arr = grouped[m];
+      liveKpMonthly[+m] = parseFloat((arr.reduce((a,b)=>a+b,0)/arr.length).toFixed(2));
+    });
+
+    // Update source badge if city loaded
+    if (selectedCity) {
+      const hasLive = Object.keys(liveKpMonthly).length > 0;
+      document.getElementById('kp-source-badge').textContent = hasLive ? 'NOAA + HISTORICAL' : 'HISTORICAL AVG';
+    }
+  } catch(e) {
+    console.warn('NOAA Kp fetch failed, using historical averages.', e.message);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  World Map (D3 + TopoJSON)
+// ═══════════════════════════════════════════════════════════════════
+function initMap() {
+  const cont = document.getElementById('map-container');
+  const W = cont.clientWidth, H = cont.clientHeight;
+
+  mapSvg = d3.select('#world-map').attr('width', W).attr('height', H);
+
+  projection = d3.geoNaturalEarth1()
+    .scale(W / 6.4)
+    .translate([W / 2, H / 2]);
+
+  pathGenerator = d3.geoPath().projection(projection);
+
+  // SVG defs
+  const defs = mapSvg.append('defs');
+  const glowFilter = defs.append('filter').attr('id', 'glow').attr('x','-50%').attr('y','-50%').attr('width','200%').attr('height','200%');
+  glowFilter.append('feGaussianBlur').attr('stdDeviation','3.5').attr('result','blur');
+  const feMerge = glowFilter.append('feMerge');
+  feMerge.append('feMergeNode').attr('in','blur');
+  feMerge.append('feMergeNode').attr('in','SourceGraphic');
+
+  mapG = mapSvg.append('g').attr('class', 'map-root');
+
+  // Ocean sphere
+  mapG.append('path').datum({type:'Sphere'}).attr('class','sphere').attr('d', pathGenerator);
+
+  // Graticule
+  const grat = d3.geoGraticule().step([30, 30]);
+  mapG.append('path').datum(grat()).attr('class','graticule').attr('d', pathGenerator);
+
+  // Auroral zone band (60°N – 75°N)
+  const auroralBand = {
+    type: 'Feature',
+    geometry: {
+      type: 'Polygon',
+      coordinates: [[
+        ...d3.range(-180, 181, 3).map(lng => [lng, 75]),
+        ...d3.range(180, -181, -3).map(lng => [lng, 60])
+      ]]
+    }
+  };
+  mapG.append('path').datum(auroralBand).attr('class','aurora-band').attr('d', pathGenerator);
+
+  // Countries
+  fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json')
+    .then(r => r.json())
+    .then(world => {
+      mapG.insert('g', '.cities')
+          .selectAll('path')
+          .data(topojson.feature(world, world.objects.countries).features)
+          .join('path').attr('class','country').attr('d', pathGenerator);
+
+      mapG.insert('path', '.cities')
+          .datum(topojson.mesh(world, world.objects.countries))
+          .attr('fill','none').attr('stroke','#1c3050').attr('stroke-width','0.3')
+          .attr('d', pathGenerator);
+    })
+    .catch(() => console.warn('world-atlas CDN unavailable'));
+
+  // Draw city markers
+  drawCities();
+
+  // Zoom
+  zoomBehavior = d3.zoom().scaleExtent([0.4, 10]).on('zoom', e => {
+    mapG.attr('transform', e.transform);
+  });
+  mapSvg.call(zoomBehavior);
+
+  // Zoom buttons
+  document.getElementById('btn-zoom-in').addEventListener('click', () => {
+    mapSvg.transition().duration(300).call(zoomBehavior.scaleBy, 1.6);
+  });
+  document.getElementById('btn-zoom-out').addEventListener('click', () => {
+    mapSvg.transition().duration(300).call(zoomBehavior.scaleBy, 0.625);
+  });
+  document.getElementById('btn-zoom-reset').addEventListener('click', () => {
+    mapSvg.transition().duration(400).call(zoomBehavior.transform, d3.zoomIdentity);
+  });
+}
+
+function drawCities() {
+  const citiesG = mapG.append('g').attr('class', 'cities');
+
+  CITIES.forEach(city => {
+    const [cx, cy] = projection([city.lng, city.lat]);
+
+    const g = citiesG.append('g')
+      .attr('class', 'city-marker')
+      .attr('id', `city-${city.id}`)
+      .attr('transform', `translate(${cx},${cy})`);
+
+    // Outer ring
+    g.append('circle').attr('r', 11).attr('class','city-ring-outer');
+    // Dot
+    g.append('circle').attr('r', 4).attr('class','city-dot').attr('filter','url(#glow)');
+    // Label
+    g.append('text').attr('class','city-label').attr('x', 9).attr('y', -5).text(city.name);
+
+    g.on('click', () => selectCity(city));
+  });
+}
+
+function setActiveCityMarker(city) {
+  d3.selectAll('.city-marker').classed('active', false);
+  d3.selectAll('.city-marker .city-dot').attr('r', 4);
+  if (city) {
+    d3.select(`#city-${city.id}`).classed('active', true);
+    d3.select(`#city-${city.id} .city-dot`).attr('r', 6);
+  }
+}
+
+function repositionMarkers() {
+  CITIES.forEach(city => {
+    const [cx, cy] = projection([city.lng, city.lat]);
+    d3.select(`#city-${city.id}`).attr('transform', `translate(${cx},${cy})`);
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  City Selection
+// ═══════════════════════════════════════════════════════════════════
+function selectCity(city) {
+  selectedCity = city;
+  setActiveCityMarker(city);
+
+  document.getElementById('welcome-state').style.display = 'none';
+  document.getElementById('city-state').style.display    = 'flex';
+
+  renderCityHeader(city);
+  renderKpChart(city);
+  renderMonthGrid(city);
+  updateMonthInfo(city);
+  fetchPhotos(city);
+}
+
+function renderCityHeader(city) {
+  document.getElementById('city-name-el').textContent = city.name.toUpperCase();
+  document.getElementById('city-loc-el').textContent  = `${city.state} · ${city.country}`;
+  document.getElementById('city-meta-el').innerHTML   = `
+    <div class="meta-item">
+      <div class="meta-lbl">LATITUDE</div>
+      <div class="meta-val">${city.lat.toFixed(4)}° N</div>
+    </div>
+    <div class="meta-item">
+      <div class="meta-lbl">LONGITUDE</div>
+      <div class="meta-val">${Math.abs(city.lng).toFixed(4)}° ${city.lng < 0 ? 'W':'E'}</div>
+    </div>
+    <div class="meta-item">
+      <div class="meta-lbl">MIN Kp THRESHOLD</div>
+      <div class="meta-val" style="color:${kpColor(city.minKp)}">Kp ${city.minKp}+</div>
+    </div>
+    <div class="meta-item">
+      <div class="meta-lbl">TIMEZONE</div>
+      <div class="meta-val" style="font-size:0.62rem">${city.tz}</div>
+    </div>
+  `;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  KP Bar Chart (D3)
+// ═══════════════════════════════════════════════════════════════════
+function renderKpChart(city) {
+  const svg    = document.getElementById('kp-chart');
+  const contEl = document.getElementById('kp-section');
+  const W      = contEl.clientWidth || 370;
+  const H      = 155;
+  const margin = { top: 14, right: 18, bottom: 22, left: 26 };
+  const iW     = W - margin.left - margin.right;
+  const iH     = H - margin.top  - margin.bottom;
+
+  const chart = d3.select('#kp-chart').attr('width', W).attr('height', H);
+  chart.selectAll('*').remove();
+
+  const kpVals = MONTHS_SHORT.map((_,i) => getKp(i, city));
+  const peak   = kpVals.indexOf(Math.max(...kpVals));
+
+  const xS = d3.scaleBand().domain(MONTHS_SHORT).range([0, iW]).padding(0.22);
+  const yS = d3.scaleLinear().domain([0, 9]).range([iH, 0]);
+
+  const g = chart.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+
+  // Grid lines
+  [1,2,3,4,5,6,7,8,9].forEach(v => {
+    g.append('line')
+     .attr('x1',0).attr('x2',iW)
+     .attr('y1',yS(v)).attr('y2',yS(v))
+     .attr('stroke', v === city.minKp ? 'rgba(0,255,163,0.35)' : '#1a2540')
+     .attr('stroke-width', v === city.minKp ? 1 : 0.5)
+     .attr('stroke-dasharray', v === city.minKp ? '4,4' : '3,3');
+    if (v === city.minKp) {
+      g.append('text')
+       .attr('x', iW + 2).attr('y', yS(v) + 3)
+       .attr('fill','rgba(0,255,163,0.5)').attr('font-size','7.5px')
+       .attr('font-family','Consolas,monospace').text(`Kp${city.minKp}`);
+    }
+  });
+
+  // Bars
+  g.selectAll('.kp-bar')
+   .data(MONTHS_SHORT)
+   .join('rect')
+   .attr('class','kp-bar')
+   .attr('x',      d  => xS(d))
+   .attr('y',      (_,i) => yS(kpVals[i]))
+   .attr('width',  xS.bandwidth())
+   .attr('height', (_,i) => Math.max(0, iH - yS(kpVals[i])))
+   .attr('fill',   (_,i) => i === selectedMonth ? '#d0eaff' : (i === peak ? '#ff9800' : kpColor(kpVals[i])))
+   .attr('opacity',(_,i) => i === selectedMonth ? 1 : 0.72)
+   .on('click',    (_, d) => selectMonth(MONTHS_SHORT.indexOf(d)));
+
+  // Selected month top indicator
+  g.append('rect')
+   .attr('x', xS(MONTHS_SHORT[selectedMonth]))
+   .attr('y', yS(kpVals[selectedMonth]) - 2)
+   .attr('width', xS.bandwidth()).attr('height', 2)
+   .attr('fill', '#d0eaff');
+
+  // Peak label
+  g.append('text')
+   .attr('x', xS(MONTHS_SHORT[peak]) + xS.bandwidth()/2)
+   .attr('y', yS(kpVals[peak]) - 4)
+   .attr('text-anchor','middle').attr('font-size','7px')
+   .attr('fill','#ff9800').attr('font-family','Consolas,monospace')
+   .text('PEAK');
+
+  // X axis
+  const xAxis = g.append('g')
+    .attr('transform', `translate(0,${iH})`)
+    .call(d3.axisBottom(xS).tickSize(2));
+  xAxis.selectAll('text').style('font-size','8px').style('font-family','Consolas,monospace').style('fill','#5a7a9a');
+  xAxis.selectAll('path,line').attr('stroke','#1a2540');
+
+  // Y axis
+  const yAxis = g.append('g').call(d3.axisLeft(yS).ticks(9).tickSize(2));
+  yAxis.selectAll('text').style('font-size','8px').style('font-family','Consolas,monospace').style('fill','#5a7a9a');
+  yAxis.selectAll('path,line').attr('stroke','#1a2540');
+
+  // Y label
+  g.append('text')
+   .attr('transform','rotate(-90)').attr('x',-iH/2).attr('y',-20)
+   .attr('text-anchor','middle').attr('font-size','7px')
+   .attr('fill','#3a5060').attr('font-family','Consolas,monospace')
+   .text('Kp INDEX');
+
+  // Update labels
+  document.getElementById('peak-badge').textContent = `PEAK: ${MONTHS_FULL[peak].toUpperCase()}`;
+  document.getElementById('kp-section-title').textContent =
+    `${city.name.toUpperCase()} · AURORA VIEWING INDEX BY MONTH`;
+  document.getElementById('kp-source-badge').textContent =
+    Object.keys(liveKpMonthly).length > 0 ? 'NOAA + HISTORICAL' : 'HISTORICAL AVG';
+  // Show midnight-sun footnote for high-latitude cities (above ~60°N)
+  document.getElementById('kp-footnote').style.display = city.lat >= 60 ? 'block' : 'none';
+  // Update threshold legend
+  document.getElementById('legend-threshold-city').textContent = city.name;
+  document.getElementById('legend-threshold-kp').textContent   = city.minKp;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  Month Grid
+// ═══════════════════════════════════════════════════════════════════
+function renderMonthGrid(city) {
+  const grid = document.getElementById('month-grid');
+  grid.innerHTML = '';
+  const peak = peakMonth(city);
+
+  MONTHS_SHORT.forEach((m, i) => {
+    const div = document.createElement('div');
+    div.className = ['month-btn',
+      i === selectedMonth ? 'active' : '',
+      i === peak           ? 'peak'   : ''
+    ].join(' ').trim();
+    div.innerHTML = m + (i === peak ? '<span class="peak-tick">▲</span>' : '');
+    div.addEventListener('click', () => selectMonth(i));
+    grid.appendChild(div);
+  });
+}
+
+function selectMonth(idx) {
+  selectedMonth = idx;
+  document.querySelectorAll('.month-btn').forEach((el, i) => {
+    el.classList.toggle('active', i === idx);
+  });
+  if (selectedCity) {
+    renderKpChart(selectedCity);
+    updateMonthInfo(selectedCity);
+    fetchPhotos(selectedCity);
+  }
+}
+
+function updateMonthInfo(city) {
+  const kp      = getKp(selectedMonth, city);
+  const visible = kp >= city.minKp;
+
+  document.getElementById('mon-name-el').textContent = MONTHS_FULL[selectedMonth].toUpperCase();
+
+  const kpEl = document.getElementById('mon-kp-val');
+  kpEl.textContent  = kp.toFixed(1);
+  kpEl.style.color  = kpColor(kp);
+
+  const vb = document.getElementById('vis-badge');
+  if (visible) {
+    vb.textContent   = 'LIKELY VISIBLE';
+    vb.style.color   = '#00ffa3';
+    vb.style.borderColor = '#00ffa3';
+    vb.style.background  = 'rgba(0,255,163,0.07)';
+  } else {
+    vb.textContent   = 'LOW PROBABILITY';
+    vb.style.color   = '#5a7a9a';
+    vb.style.borderColor = '#3a5060';
+    vb.style.background  = 'transparent';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  Wikimedia Commons Photo Fetch
+// ═══════════════════════════════════════════════════════════════════
+async function fetchPhotos(city) {
+  const gallery = document.getElementById('photo-gallery');
+  gallery.innerHTML = `<div class="photo-loading"><span class="loading-text">FETCHING AURORA PHOTOGRAPHS...</span></div>`;
+
+  const cacheKey = city.id;
+  try {
+    let images;
+    if (photoCache[cacheKey]) {
+      images = photoCache[cacheKey];
+    } else {
+      images = await searchWikimedia(city.search);
+      if (images.length < 2) {
+        const fallback = await searchWikimedia(`aurora borealis ${city.country} night sky`);
+        images = [...images, ...fallback].slice(0, 8);
+      }
+      photoCache[cacheKey] = images;
+    }
+    renderGallery(gallery, images, city);
+  } catch(e) {
+    gallery.innerHTML = `<div class="no-photos">UNABLE TO LOAD PHOTOGRAPHS<br><span style="font-size:0.52rem">CHECK NETWORK CONNECTION</span></div>`;
+  }
+}
+
+async function searchWikimedia(query) {
+  // Step 1: search for file pages
+  const searchURL = `https://commons.wikimedia.org/w/api.php?` +
+    `action=query&list=search&srsearch=${encodeURIComponent(query)}&srnamespace=6` +
+    `&format=json&origin=*&srlimit=12&srqiprofile=popular_inclinks`;
+
+  const sRes  = await fetch(searchURL);
+  const sData = await sRes.json();
+  const hits  = (sData.query?.search || [])
+    .filter(r => /\.(jpg|jpeg|png)$/i.test(r.title))
+    .slice(0, 8);
+
+  if (!hits.length) return [];
+
+  // Step 2: fetch image info & thumbnails
+  const titles = hits.map(h => h.title).join('|');
+  const infoURL = `https://commons.wikimedia.org/w/api.php?` +
+    `action=query&titles=${encodeURIComponent(titles)}&prop=imageinfo` +
+    `&iiprop=url|user|extmetadata&iiurlwidth=600&format=json&origin=*`;
+
+  const iRes  = await fetch(infoURL);
+  const iData = await iRes.json();
+
+  return Object.values(iData.query?.pages || {})
+    .filter(p => p.imageinfo?.[0]?.thumburl)
+    .map(p => {
+      const info = p.imageinfo[0];
+      const meta = info.extmetadata || {};
+      const rawAuthor = meta.Artist?.value || info.user || 'Unknown';
+      const author = rawAuthor.replace(/<[^>]*>/g, '').trim().substring(0, 32);
+      const rawDate = meta.DateTimeOriginal?.value || meta.DateTime?.value || '';
+      const date = rawDate.split(' ')[0] || rawDate.split('T')[0] || 'Date unknown';
+      const license = meta.LicenseShortName?.value || 'CC';
+      const sourceUrl = info.descriptionurl ||
+        `https://commons.wikimedia.org/wiki/${encodeURIComponent(p.title.replace(/ /g,'_'))}`;
+      return {
+        title: p.title.replace('File:','').replace(/\.[^.]+$/,''),
+        thumb: info.thumburl,
+        full:  info.url,
+        source: sourceUrl,
+        author, date, license
+      };
+    });
+}
+
+function renderGallery(container, images, city) {
+  if (!images.length) {
+    container.innerHTML = `<div class="no-photos">NO PHOTOGRAPHS FOUND<br>
+      <a href="https://commons.wikimedia.org/w/index.php?search=aurora+borealis+${encodeURIComponent(city.name)}&ns6=1"
+         target="_blank" rel="noopener noreferrer"
+         style="font-size:0.52rem;color:#00b4d8;text-decoration:none;display:inline-block;margin-top:6px">
+        ↗ SEARCH WIKIMEDIA COMMONS
+      </a></div>`;
+    return;
+  }
+
+  container.innerHTML = '';
+  const grid = document.createElement('div');
+  grid.className = 'photo-grid';
+
+  images.forEach(img => {
+    const card = document.createElement('div');
+    card.className = 'photo-card';
+    card.innerHTML = `
+      <img class="photo-thumb" src="${img.thumb}" alt="${img.title}" loading="lazy">
+      <div class="photo-cap">
+        <div class="photo-author">© ${img.author}</div>
+        <div class="photo-date">${img.date} · ${img.license}</div>
+        <a class="photo-src" href="${img.source}" target="_blank" rel="noopener noreferrer">↗ VIEW ON WIKIMEDIA</a>
+      </div>
+    `;
+    card.querySelector('.photo-thumb').addEventListener('click', () => window.open(img.source, '_blank', 'noopener'));
+    grid.appendChild(card);
+  });
+
+  container.appendChild(grid);
+
+  const note = document.createElement('div');
+  note.className = 'photo-attrib';
+  const month = MONTHS_FULL[selectedMonth];
+  note.textContent = `AURORA PHOTOS · ${city.name.toUpperCase()} · ${images.length} RESULTS · WIKIMEDIA COMMONS CC`;
+  container.appendChild(note);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  Welcome city list
+// ═══════════════════════════════════════════════════════════════════
+function initWelcomeList() {
+  const list = document.getElementById('city-list-hint');
+  CITIES.forEach(city => {
+    const el = document.createElement('div');
+    el.className = 'city-hint-item';
+    el.textContent = `${city.name}, ${city.state}, ${city.country}`;
+    el.addEventListener('click', () => selectCity(city));
+    list.appendChild(el);
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  Responsive resize
+// ═══════════════════════════════════════════════════════════════════
+let resizeTimer;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    const cont = document.getElementById('map-container');
+    const W = cont.clientWidth, H = cont.clientHeight;
+    mapSvg.attr('width', W).attr('height', H);
+    projection.scale(W / 6.4).translate([W / 2, H / 2]);
+    mapG.selectAll('path').attr('d', pathGenerator);
+    repositionMarkers();
+    if (selectedCity) renderKpChart(selectedCity);
+    resizeAuroraCanvas();
+    if (document.getElementById('oval-checkbox').checked) drawAuroraOval();
+  }, 200);
+});
+
+// ═══════════════════════════════════════════════════════════════════
+//  Aurora Oval Overlay (NOAA OVATION via SWPC)
+// ═══════════════════════════════════════════════════════════════════
+
+let ovalData      = null;   // parsed NOAA aurora JSON
+let ovalEnabled   = false;
+let currentZoomTransform = d3.zoomIdentity;
+
+function resizeAuroraCanvas() {
+  const cont = document.getElementById('map-container');
+  const cvs  = document.getElementById('aurora-canvas');
+  cvs.width  = cont.clientWidth;
+  cvs.height = cont.clientHeight;
+}
+
+async function fetchAuroraOval() {
+  try {
+    // NOAA SWPC OVATION aurora forecast — 512×512 grid, global coverage
+    const url = 'https://services.swpc.noaa.gov/json/ovation_aurora_latest.json';
+    const res  = await fetch(url);
+    const json = await res.json();
+    ovalData = json;
+    document.getElementById('oval-status').textContent =
+      json['Observation Time'] ? json['Observation Time'].replace('T',' ').slice(0,16)+' UTC' : 'LIVE';
+    if (ovalEnabled) drawAuroraOval();
+  } catch(e) {
+    console.warn('NOAA OVATION fetch failed:', e.message);
+    document.getElementById('oval-status').textContent = 'FETCH ERR';
+  }
+}
+
+function drawAuroraOval() {
+  const cvs = document.getElementById('aurora-canvas');
+  const ctx = cvs.getContext('2d');
+  ctx.clearRect(0, 0, cvs.width, cvs.height);
+
+  if (!ovalData || !ovalData.coordinates) return;
+
+  // NOAA data: array of [lng, lat, aurora_value] where aurora_value 0-100
+  const coords = ovalData.coordinates;
+  const t = currentZoomTransform;
+
+  for (let i = 0; i < coords.length; i++) {
+    const [lng, lat, val] = coords[i];
+    if (val <= 0) continue;
+
+    // Project geo → SVG pixel → apply current zoom transform
+    const [svgX, svgY] = projection([lng, lat]);
+    const screenX = t.applyX(svgX);
+    const screenY = t.applyY(svgY);
+
+    // Normalise 0–100 → opacity & colour
+    const norm    = Math.min(val / 100, 1);
+    const alpha   = 0.15 + norm * 0.75;
+
+    // Green → cyan → white gradient by intensity
+    let r, g, b;
+    if (norm < 0.4) {
+      r = 0;   g = Math.round(180 + norm * 187); b = Math.round(norm * 200);
+    } else if (norm < 0.75) {
+      r = Math.round((norm - 0.4) / 0.35 * 80);
+      g = 255;
+      b = Math.round(150 + norm * 105);
+    } else {
+      r = Math.round(80  + (norm - 0.75) / 0.25 * 175);
+      g = 255;
+      b = 255;
+    }
+
+    const radius = Math.max(1, (t.k * 2.2));
+    ctx.beginPath();
+    ctx.arc(screenX, screenY, radius, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${r},${g},${b},${alpha})`;
+    ctx.fill();
+  }
+}
+
+function clearAuroraOval() {
+  const cvs = document.getElementById('aurora-canvas');
+  const ctx = cvs.getContext('2d');
+  ctx.clearRect(0, 0, cvs.width, cvs.height);
+}
+
+function initAuroraOval() {
+  const checkbox = document.getElementById('oval-checkbox');
+  const canvas   = document.getElementById('aurora-canvas');
+  const legend   = document.getElementById('oval-legend');
+
+  checkbox.addEventListener('change', async () => {
+    ovalEnabled = checkbox.checked;
+    legend.style.display = ovalEnabled ? 'flex' : 'none';
+    if (ovalEnabled) {
+      canvas.classList.add('visible');
+      if (!ovalData) {
+        document.getElementById('oval-status').textContent = 'LOADING…';
+        await fetchAuroraOval();
+      } else {
+        drawAuroraOval();
+      }
+    } else {
+      canvas.classList.remove('visible');
+      clearAuroraOval();
+    }
+  });
+
+  // Hook into D3 zoom to redraw overlay on pan/zoom
+  const origZoom = zoomBehavior.on('zoom');
+  zoomBehavior.on('zoom', (e) => {
+    mapG.attr('transform', e.transform);
+    currentZoomTransform = e.transform;
+    if (ovalEnabled) drawAuroraOval();
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  Kp Info Tooltip
+// ═══════════════════════════════════════════════════════════════════
+function initKpTooltip() {
+  const btn     = document.getElementById('kp-info-btn');
+  const tooltip = document.getElementById('kp-tooltip');
+  const close   = document.getElementById('kp-tooltip-close');
+
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const visible = tooltip.classList.toggle('visible');
+    btn.classList.toggle('active', visible);
+  });
+
+  close.addEventListener('click', () => {
+    tooltip.classList.remove('visible');
+    btn.classList.remove('active');
+  });
+
+  // Close when clicking anywhere outside
+  document.addEventListener('click', (e) => {
+    if (!tooltip.contains(e.target) && e.target !== btn) {
+      tooltip.classList.remove('visible');
+      btn.classList.remove('active');
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  Boot
+// ═══════════════════════════════════════════════════════════════════
+(async function init() {
+  initMap();
+  initKpTooltip();
+  initWelcomeList();
+
+  document.getElementById('back-btn').addEventListener('click', () => {
+    selectedCity = null;
+    setActiveCityMarker(null);
+    document.getElementById('city-state').style.display  = 'none';
+    document.getElementById('welcome-state').style.display = 'flex';
+  });
+  resizeAuroraCanvas();
+  initAuroraOval();
+  await fetchNOAAKp();
+  setInterval(fetchNOAAKp,        3 * 60 * 1000);  // Kp every 3 min
+  setInterval(fetchAuroraOval,   10 * 60 * 1000);  // oval every 10 min
+})();
+</script>
+</body>
+</html>
