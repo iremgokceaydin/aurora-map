@@ -183,7 +183,7 @@
         .city-ring-outer { fill: none; stroke: rgba(0,255,163,0.2); stroke-width: 1px; }
         .city-dot    { fill: #00ffa3; stroke: rgba(0,255,163,0.6); stroke-width: 1px; cursor: pointer; }
         .city-label  {
-            fill: #00ffa3; font-family: var(--font); font-size: 9.5px;
+            fill: #00ffa3; font-family: var(--font);
             letter-spacing: 0.05em; pointer-events: none; opacity: 0.85;
         }
         .city-marker.active .city-dot    { fill: #fff; r: 7; stroke: #00ffa3; stroke-width: 2px; }
@@ -223,6 +223,74 @@
             cursor: pointer; transition: all 0.15s;
         }
         .city-hint-item:hover { background: rgba(0,255,163,0.05); color: var(--text-primary); }
+        .city-hint-item.custom { border-left-color: var(--accent-purple); }
+        .city-hint-item.custom:hover { background: rgba(157,113,255,0.05); }
+        .city-custom-tag {
+            float: right; font-size: 0.44rem; color: var(--accent-purple);
+            border: 1px solid rgba(157,113,255,0.4); padding: 1px 5px;
+            letter-spacing: 0.1em; margin-top: 1px;
+        }
+
+        /* ── Add location widget ──────────────────────────── */
+        .add-location-wrap {
+            margin-top: 14px; width: 100%;
+            border-top: 1px solid var(--border); padding-top: 12px;
+        }
+        .add-location-label {
+            font-size: 0.52rem; color: var(--text-dim);
+            letter-spacing: 0.18em; text-transform: uppercase; margin-bottom: 7px;
+        }
+        .add-location-row {
+            display: flex; gap: 6px; position: relative;
+        }
+        .add-location-input {
+            flex: 1; background: var(--bg-card);
+            border: 1px solid var(--border-bright);
+            color: var(--text-primary); font-family: var(--font);
+            font-size: 0.65rem; padding: 7px 10px;
+            outline: none; letter-spacing: 0.05em;
+            transition: border-color 0.15s;
+        }
+        .add-location-input::placeholder { color: var(--text-dim); }
+        .add-location-input:focus { border-color: var(--accent-green); }
+        .add-location-btn {
+            background: rgba(0,255,163,0.08); border: 1px solid rgba(0,255,163,0.35);
+            color: var(--accent-green); font-family: var(--font);
+            font-size: 0.6rem; letter-spacing: 0.12em; padding: 7px 12px;
+            cursor: pointer; transition: all 0.15s; white-space: nowrap;
+        }
+        .add-location-btn:hover:not(:disabled) { background: rgba(0,255,163,0.18); }
+        .add-location-btn:disabled { opacity: 0.35; cursor: default; }
+        .add-dropdown {
+            position: absolute; top: calc(100% + 2px); left: 0;
+            width: calc(100% - 68px); /* same width as input */
+            background: var(--bg-panel); border: 1px solid var(--border-bright);
+            border-top: none; z-index: 50; display: none;
+            max-height: 200px; overflow-y: auto;
+        }
+        .add-dropdown.open { display: block; }
+        .add-dropdown::-webkit-scrollbar { width: 3px; }
+        .add-dropdown::-webkit-scrollbar-thumb { background: var(--border-bright); }
+        .add-dropdown-item {
+            padding: 7px 10px; font-size: 0.6rem; color: var(--text-secondary);
+            letter-spacing: 0.04em; cursor: pointer; border-bottom: 1px solid var(--border);
+            transition: background 0.1s;
+        }
+        .add-dropdown-item:last-child { border-bottom: none; }
+        .add-dropdown-item:hover, .add-dropdown-item.focused {
+            background: rgba(0,255,163,0.07); color: var(--text-primary);
+        }
+        .add-dropdown-item .drop-country {
+            font-size: 0.48rem; color: var(--text-dim); margin-top: 1px;
+        }
+        .add-dropdown-msg {
+            padding: 10px; font-size: 0.58rem; color: var(--text-dim);
+            letter-spacing: 0.1em; text-align: center;
+        }
+        .add-error {
+            font-size: 0.52rem; color: #f44336; margin-top: 5px;
+            letter-spacing: 0.06em; display: none;
+        }
 
         /* ── City state ───────────────────────────────────── */
         #city-state { display: flex; flex-direction: column; gap: 14px; }
@@ -573,6 +641,17 @@
         <div class="welcome-title">SELECT A LOCATION</div>
         <div class="welcome-desc">Click a highlighted city marker on the<br>map to view Kp index data &amp; aurora photos</div>
         <div class="city-list-hint" id="city-list-hint"></div>
+
+        <div class="add-location-wrap">
+          <div class="add-location-label">+ ADD LOCATION</div>
+          <div class="add-location-row">
+            <input type="text" class="add-location-input" id="add-city-input"
+              placeholder="Search city name…" autocomplete="off" spellcheck="false">
+            <button class="add-location-btn" id="add-city-btn" disabled>ADD</button>
+            <div class="add-dropdown" id="add-dropdown"></div>
+          </div>
+          <div class="add-error" id="add-error"></div>
+        </div>
       </div>
 
       <!-- City state -->
@@ -635,7 +714,7 @@
         <!-- Photos -->
         <div id="photos-section">
           <div class="section-header">
-            <span class="section-title">AURORA PHOTOGRAPHS</span>
+            <span class="section-title">AURORA PHOTOGRAPHS · <span id="photo-month-label">—</span></span>
             <span class="section-badge">WIKIMEDIA COMMONS</span>
           </div>
           <div id="photo-gallery"></div>
@@ -918,7 +997,7 @@ function drawCities() {
     // Dot
     g.append('circle').attr('r', 4).attr('class','city-dot').attr('filter','url(#glow)');
     // Label
-    g.append('text').attr('class','city-label').attr('x', 9).attr('y', -5).text(city.name);
+    g.append('text').attr('class','city-label').style('font-size','9.5px').attr('x', 9).attr('y', -5).text(city.name);
 
     g.on('click', () => selectCity(city));
   });
@@ -934,7 +1013,7 @@ function setActiveCityMarker(city) {
 }
 
 function repositionMarkers() {
-  CITIES.forEach(city => {
+  [...CITIES, ...customCities].forEach(city => {
     const [cx, cy] = projection([city.lng, city.lat]);
     d3.select(`#city-${city.id}`).attr('transform', `translate(${cx},${cy})`);
   });
@@ -1139,20 +1218,41 @@ function updateMonthInfo(city) {
 //  Wikimedia Commons Photo Fetch
 // ═══════════════════════════════════════════════════════════════════
 async function fetchPhotos(city) {
-  const gallery = document.getElementById('photo-gallery');
+  const gallery  = document.getElementById('photo-gallery');
+  const monthName = MONTHS_FULL[selectedMonth];
+
+  // Update section header
+  document.getElementById('photo-month-label').textContent = monthName.toUpperCase();
+
   gallery.innerHTML = `<div class="photo-loading"><span class="loading-text">FETCHING AURORA PHOTOGRAPHS...</span></div>`;
 
-  const cacheKey = city.id;
+  // Cache per city+month so switching months fetches fresh results
+  const cacheKey = `${city.id}_${selectedMonth}`;
   try {
     let images;
     if (photoCache[cacheKey]) {
       images = photoCache[cacheKey];
     } else {
-      images = await searchWikimedia(city.search);
+      // Primary: city + month name
+      images = await searchWikimedia(`aurora borealis ${city.name} ${monthName}`);
+      // Secondary: city only (drop month)
       if (images.length < 2) {
-        const fallback = await searchWikimedia(`aurora borealis ${city.country} night sky`);
-        images = [...images, ...fallback].slice(0, 8);
+        const cityResults = await searchWikimedia(city.search);
+        images = [...images, ...cityResults];
       }
+      // Tertiary: country + month
+      if (images.length < 2) {
+        const countryResults = await searchWikimedia(`aurora borealis ${city.country} ${monthName}`);
+        images = [...images, ...countryResults];
+      }
+      // Deduplicate by thumb URL and cap at 8
+      const seen = new Set();
+      images = images.filter(img => {
+        if (seen.has(img.thumb)) return false;
+        seen.add(img.thumb);
+        return true;
+      }).slice(0, 8);
+
       photoCache[cacheKey] = images;
     }
     renderGallery(gallery, images, city);
@@ -1240,8 +1340,7 @@ function renderGallery(container, images, city) {
 
   const note = document.createElement('div');
   note.className = 'photo-attrib';
-  const month = MONTHS_FULL[selectedMonth];
-  note.textContent = `AURORA PHOTOS · ${city.name.toUpperCase()} · ${images.length} RESULTS · WIKIMEDIA COMMONS CC`;
+  note.textContent = `AURORA PHOTOS · ${city.name.toUpperCase()} · ${MONTHS_FULL[selectedMonth].toUpperCase()} · ${images.length} RESULTS · WIKIMEDIA COMMONS CC`;
   container.appendChild(note);
 }
 
@@ -1249,14 +1348,7 @@ function renderGallery(container, images, city) {
 //  Welcome city list
 // ═══════════════════════════════════════════════════════════════════
 function initWelcomeList() {
-  const list = document.getElementById('city-list-hint');
-  CITIES.forEach(city => {
-    const el = document.createElement('div');
-    el.className = 'city-hint-item';
-    el.textContent = `${city.name}, ${city.state}, ${city.country}`;
-    el.addEventListener('click', () => selectCity(city));
-    list.appendChild(el);
-  });
+  CITIES.forEach(city => addCityHintItem(city, false));
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1384,12 +1476,38 @@ function initAuroraOval() {
   });
 
   // Hook into D3 zoom to redraw overlay on pan/zoom
-  const origZoom = zoomBehavior.on('zoom');
   zoomBehavior.on('zoom', (e) => {
     mapG.attr('transform', e.transform);
     currentZoomTransform = e.transform;
+    scaleCityLabels(e.transform.k);
     if (ovalEnabled) drawAuroraOval();
   });
+}
+
+function scaleCityLabels(k) {
+  // Counter-scale labels and rings so they stay screen-size-constant while zooming.
+  // Base sizes at k=1; divide by k to neutralise the parent transform.
+  const fontSize   = Math.max(6, 9.5 / k);
+  const dotR       = Math.max(2, 4  / k);
+  const activeR    = Math.max(3, 6  / k);
+  const ringR      = Math.max(5, 11 / k);
+  const strokeW    = Math.max(0.3, 1 / k);
+  const labelX     = Math.max(5, 9  / k);
+  const labelY     = Math.max(-6, -5 / k);
+
+  d3.selectAll('.city-label')
+    .style('font-size', fontSize + 'px')
+    .attr('x', labelX)
+    .attr('y', labelY);
+
+  d3.selectAll('.city-ring-outer')
+    .attr('r', ringR)
+    .style('stroke-width', strokeW + 'px');
+
+  // Normal dots
+  d3.selectAll('.city-marker:not(.active) .city-dot').attr('r', dotR);
+  // Active dot stays slightly larger
+  d3.selectAll('.city-marker.active .city-dot').attr('r', activeR);
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1421,12 +1539,224 @@ function initKpTooltip() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+//  Add Custom Location
+// ═══════════════════════════════════════════════════════════════════
+
+// Compute a Kp profile for an arbitrary latitude using the same
+// seasonal model as the built-in cities.
+function computeKpProfile(lat) {
+  // Geomagnetic latitude proxy: scale by distance from auroral oval (~67°N)
+  const geomagLat = Math.abs(lat);
+
+  // Latitude factor: 1.0 at 70°N, tapering to ~0.15 at 40°N, ~0 below 35°N
+  const latFactor = Math.max(0, Math.min(1, (geomagLat - 35) / 35));
+
+  // Midnight sun suppression for high latitudes (above ~60°N)
+  const midnightSun = geomagLat >= 60;
+
+  // Baseline seasonal shape — Russell–McPherron equinoctial pattern
+  // Jan  Feb  Mar  Apr  May  Jun  Jul  Aug  Sep  Oct  Nov  Dec
+  const shape = [0.75, 0.80, 0.95, 0.72, 0.45, 0.18, 0.15, 0.40, 1.00, 0.92, 0.82, 0.76];
+
+  // Inside oval (≥67°N): October peak from polar-night + equinoctial combo
+  // Atlantic/European sector approximation for high latitudes
+  if (geomagLat >= 67) {
+    shape[9] = 1.05; shape[8] = 0.98; shape[2] = 0.92;
+  }
+  // North of ~60°: suppress midnight sun months
+  if (midnightSun) {
+    shape[5] = 0.02; shape[6] = 0.02;
+    shape[4] = 0.15; shape[7] = 0.30;
+  }
+
+  // Peak Kp scales with geomagnetic latitude
+  const peak = 1.2 + latFactor * 3.5;
+
+  return shape.map(s => parseFloat((s * peak).toFixed(2)));
+}
+
+// Derive minKp threshold from latitude
+function computeMinKp(lat) {
+  const g = Math.abs(lat);
+  if (g >= 68) return 2;
+  if (g >= 62) return 3;
+  if (g >= 55) return 4;
+  if (g >= 50) return 5;
+  return 6;
+}
+
+// Add a single marker to the existing cities SVG group
+function addCityMarker(city) {
+  const citiesG = mapG.select('.cities');
+  const [cx, cy] = projection([city.lng, city.lat]);
+  const k = currentZoomTransform.k;
+
+  const g = citiesG.append('g')
+    .attr('class', 'city-marker')
+    .attr('id', `city-${city.id}`)
+    .attr('transform', `translate(${cx},${cy})`);
+
+  g.append('circle').attr('r', Math.max(5, 11 / k)).attr('class', 'city-ring-outer').style('stroke-width', Math.max(0.3, 1 / k) + 'px');
+  g.append('circle').attr('r', Math.max(2, 4 / k)).attr('class', 'city-dot').attr('filter', 'url(#glow)');
+  g.append('text').attr('class', 'city-label').style('font-size', Math.max(6, 9.5 / k) + 'px').attr('x', Math.max(5, 9 / k)).attr('y', Math.max(-6, -5 / k)).text(city.name);
+  g.on('click', () => selectCity(city));
+}
+
+// Add a city hint item to the welcome list
+function addCityHintItem(city, isCustom) {
+  const list = document.getElementById('city-list-hint');
+  const el = document.createElement('div');
+  el.className = 'city-hint-item' + (isCustom ? ' custom' : '');
+  el.dataset.cityId = city.id;
+  el.innerHTML = `${city.name}, ${city.state}, ${city.country}`
+    + (isCustom ? `<span class="city-custom-tag">CUSTOM</span>` : '');
+  el.addEventListener('click', () => selectCity(city));
+  list.appendChild(el);
+}
+
+let geocodeTimer = null;
+let dropdownSelection = null; // { lat, lng, name, display_name, address }
+
+function initAddLocation() {
+  const input    = document.getElementById('add-city-input');
+  const dropdown = document.getElementById('add-dropdown');
+  const addBtn   = document.getElementById('add-city-btn');
+  const errorEl  = document.getElementById('add-error');
+
+  function showError(msg) {
+    errorEl.textContent = msg;
+    errorEl.style.display = 'block';
+  }
+  function clearError() { errorEl.style.display = 'none'; }
+
+  function closeDropdown() {
+    dropdown.classList.remove('open');
+    dropdown.innerHTML = '';
+  }
+
+  function renderDropdown(results) {
+    dropdown.innerHTML = '';
+    if (!results.length) {
+      dropdown.innerHTML = '<div class="add-dropdown-msg">NO RESULTS FOUND</div>';
+      dropdown.classList.add('open');
+      return;
+    }
+    results.forEach((r, i) => {
+      const addr = r.address || {};
+      const country = addr.country || '';
+      const state   = addr.state || addr.county || addr.region || '';
+      const item = document.createElement('div');
+      item.className = 'add-dropdown-item';
+      item.innerHTML = `<div>${r.name || r.display_name.split(',')[0]}</div>
+        <div class="drop-country">${[state, country].filter(Boolean).join(', ')}</div>`;
+      item.addEventListener('mousedown', (e) => {
+        e.preventDefault(); // keep focus on input
+        dropdownSelection = r;
+        input.value = r.name || r.display_name.split(',')[0];
+        addBtn.disabled = false;
+        clearError();
+        closeDropdown();
+      });
+      dropdown.appendChild(item);
+    });
+    dropdown.classList.add('open');
+    dropdownSelection = null;
+    addBtn.disabled = true;
+  }
+
+  async function geocode(query) {
+    try {
+      const url = `https://nominatim.openstreetmap.org/search?` +
+        `q=${encodeURIComponent(query)}&format=json&addressdetails=1&limit=6&featuretype=city`;
+      const res  = await fetch(url, { headers: { 'Accept-Language': 'en' } });
+      const data = await res.json();
+      renderDropdown(data);
+    } catch(e) {
+      closeDropdown();
+      showError('GEOCODE LOOKUP FAILED — CHECK CONNECTION');
+    }
+  }
+
+  input.addEventListener('input', () => {
+    const val = input.value.trim();
+    clearError();
+    addBtn.disabled = true;
+    dropdownSelection = null;
+    if (val.length < 2) { closeDropdown(); return; }
+    clearTimeout(geocodeTimer);
+    dropdown.innerHTML = '<div class="add-dropdown-msg">SEARCHING…</div>';
+    dropdown.classList.add('open');
+    geocodeTimer = setTimeout(() => geocode(val), 400);
+  });
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { closeDropdown(); input.blur(); }
+  });
+
+  input.addEventListener('blur', () => {
+    // slight delay so mousedown on item fires first
+    setTimeout(closeDropdown, 150);
+  });
+
+  addBtn.addEventListener('click', () => {
+    if (!dropdownSelection) return;
+    clearError();
+
+    const r      = dropdownSelection;
+    const addr   = r.address || {};
+    const lat    = parseFloat(r.lat);
+    const lng    = parseFloat(r.lon);
+    const name   = r.name || r.display_name.split(',')[0];
+    const state  = addr.state || addr.county || addr.region || '—';
+    const country= addr.country || '—';
+
+    // Check for duplicate
+    const allCities = [...CITIES, ...customCities];
+    if (allCities.some(c => Math.abs(c.lat - lat) < 0.05 && Math.abs(c.lng - lng) < 0.05)) {
+      showError('LOCATION ALREADY ADDED');
+      return;
+    }
+
+    const id      = 'custom_' + name.toLowerCase().replace(/\s+/g, '_') + '_' + Date.now();
+    const minKp   = computeMinKp(lat);
+    const kpProfile = computeKpProfile(lat);
+    const tzOffset  = -Math.round(lng / 15);
+    const tzLabel   = tzOffset === 0 ? 'UTC±0' : (tzOffset > 0 ? `UTC+${tzOffset}` : `UTC${tzOffset}`);
+
+    const city = {
+      id, name, state, country, lat, lng, minKp,
+      tz: tzLabel,
+      desc: `Custom location at ${lat.toFixed(2)}°, ${lng.toFixed(2)}°. Min Kp threshold: ${minKp}.`,
+      search: `aurora borealis ${name} ${country}`,
+      custom: true
+    };
+
+    CITY_KP[id] = kpProfile;
+    customCities.push(city);
+
+    addCityMarker(city);
+    addCityHintItem(city, true);
+
+    // Reset input
+    input.value = '';
+    addBtn.disabled = true;
+    dropdownSelection = null;
+
+    // Immediately open the new city
+    selectCity(city);
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
 //  Boot
 // ═══════════════════════════════════════════════════════════════════
+const customCities = [];
+
 (async function init() {
   initMap();
   initKpTooltip();
   initWelcomeList();
+  initAddLocation();
 
   document.getElementById('back-btn').addEventListener('click', () => {
     selectedCity = null;
