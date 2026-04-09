@@ -180,15 +180,73 @@
         .country     { fill: #0c1c30; stroke: #162840; stroke-width: 0.4px; transition: fill 0.15s; }
         .country:hover { fill: #122238; }
         .aurora-band { fill: rgba(0,255,163,0.035); stroke: rgba(0,255,163,0.09); stroke-width: 0.8px; }
-        .city-ring-outer { fill: none; stroke: rgba(0,255,163,0.2); stroke-width: 1px; }
-        .city-dot    { fill: #00ffa3; stroke: rgba(0,255,163,0.6); stroke-width: 1px; cursor: pointer; }
-        .city-label  {
-            fill: #00ffa3; font-family: var(--font);
-            letter-spacing: 0.05em; pointer-events: none; opacity: 0.85;
-        }
-        .city-marker.active .city-dot    { fill: #fff; r: 7; stroke: #00ffa3; stroke-width: 2px; }
-        .city-marker.active .city-ring-outer { stroke: rgba(0,255,163,0.55); }
+
+        /* ── City markers ─────────────────────────────────── */
         .city-marker { cursor: pointer; }
+
+        /* Pulse ring — only animates on selected city */
+        .city-pulse {
+            fill: none; stroke: rgba(0,255,163,0); stroke-width: 1px;
+            pointer-events: none;
+        }
+        .city-marker.active .city-pulse {
+            stroke: rgba(0,255,163,0.9);
+            animation: marker-pulse-active 1.6s ease-out;
+        }
+        @keyframes marker-pulse-active {
+            0%   { r: 8px;  opacity: 0.9; }
+            100% { r: 22px; opacity: 0;   }
+        }
+
+        /* Outer ring — static border */
+        .city-ring-outer {
+            fill: none;
+            stroke: rgba(0,255,163,0.18);
+            stroke-width: 1px;
+            transition: stroke 0.2s, stroke-width 0.2s;
+        }
+        .city-marker:hover .city-ring-outer { stroke: rgba(0,255,163,0.45); }
+        .city-marker.active .city-ring-outer {
+            stroke: rgba(0,255,163,0.85);
+            stroke-width: 1.5px;
+        }
+
+        /* Inner ring — only visible on active */
+        .city-ring-inner {
+            fill: none;
+            stroke: rgba(0,255,163,0);
+            stroke-width: 1px;
+            transition: stroke 0.2s;
+        }
+        .city-marker.active .city-ring-inner {
+            stroke: rgba(0,255,163,0.4);
+        }
+
+        /* Core dot */
+        .city-dot {
+            fill: rgba(0,255,163,0.7);
+            stroke: none;
+            transition: fill 0.2s;
+        }
+        .city-marker:hover .city-dot { fill: #00ffa3; }
+        .city-marker.active .city-dot {
+            fill: #ffffff;
+            filter: url(#glow);
+        }
+
+        /* Label */
+        .city-label {
+            fill: rgba(0,255,163,0.65);
+            font-family: var(--font);
+            letter-spacing: 0.07em;
+            pointer-events: none;
+            transition: fill 0.2s, opacity 0.2s;
+        }
+        .city-marker:hover .city-label { fill: rgba(0,255,163,0.95); }
+        .city-marker.active .city-label {
+            fill: #ffffff;
+            letter-spacing: 0.1em;
+        }
 
         /* ── Right data panel ─────────────────────────────── */
         #data-panel {
@@ -992,11 +1050,10 @@ function drawCities() {
       .attr('id', `city-${city.id}`)
       .attr('transform', `translate(${cx},${cy})`);
 
-    // Outer ring
-    g.append('circle').attr('r', 11).attr('class','city-ring-outer');
-    // Dot
-    g.append('circle').attr('r', 4).attr('class','city-dot').attr('filter','url(#glow)');
-    // Label
+    g.append('circle').attr('class','city-pulse').attr('r', 6);
+    g.append('circle').attr('class','city-ring-outer').attr('r', 11);
+    g.append('circle').attr('class','city-ring-inner').attr('r', 7);
+    g.append('circle').attr('class','city-dot').attr('r', 3.5).attr('filter','url(#glow)');
     g.append('text').attr('class','city-label').style('font-size','9.5px').attr('x', 9).attr('y', -5).text(city.name);
 
     g.on('click', () => selectCity(city));
@@ -1004,11 +1061,24 @@ function drawCities() {
 }
 
 function setActiveCityMarker(city) {
+  const k = currentZoomTransform.k;
+
+  // Reset all to default
   d3.selectAll('.city-marker').classed('active', false);
-  d3.selectAll('.city-marker .city-dot').attr('r', 4);
+  d3.selectAll('.city-marker .city-dot')
+    .transition().duration(200).attr('r', Math.max(2, 3.5 / k));
+  d3.selectAll('.city-marker .city-ring-outer')
+    .transition().duration(200).attr('r', Math.max(5, 11 / k));
+
   if (city) {
-    d3.select(`#city-${city.id}`).classed('active', true);
-    d3.select(`#city-${city.id} .city-dot`).attr('r', 6);
+    const g = d3.select(`#city-${city.id}`);
+    g.classed('active', true);
+    g.select('.city-dot')
+      .transition().duration(200).attr('r', Math.max(3, 5 / k));
+    g.select('.city-ring-outer')
+      .transition().duration(200).attr('r', Math.max(6, 13 / k));
+    g.select('.city-ring-inner')
+      .transition().duration(200).attr('r', Math.max(4, 9 / k));
   }
 }
 
@@ -1485,29 +1555,36 @@ function initAuroraOval() {
 }
 
 function scaleCityLabels(k) {
-  // Counter-scale labels and rings so they stay screen-size-constant while zooming.
-  // Base sizes at k=1; divide by k to neutralise the parent transform.
-  const fontSize   = Math.max(6, 9.5 / k);
-  const dotR       = Math.max(2, 4  / k);
-  const activeR    = Math.max(3, 6  / k);
-  const ringR      = Math.max(5, 11 / k);
-  const strokeW    = Math.max(0.3, 1 / k);
-  const labelX     = Math.max(5, 9  / k);
-  const labelY     = Math.max(-6, -5 / k);
+  // Counter-scale all marker elements so they stay screen-size-constant while zooming.
+  const fontSize    = Math.max(3,   9.5 / k);
+  const dotR        = Math.max(2,   3.5 / k);
+  const activeDotR  = Math.max(3,   5   / k);
+  const ringR       = Math.max(5,   11  / k);
+  const activeRingR = Math.max(6,   13  / k);
+  const innerR      = Math.max(3,   7   / k);
+  const activeInnerR= Math.max(4,   9   / k);
+  const pulseR      = Math.max(3,   6   / k);
+  const strokeW     = Math.max(0.3, 1   / k);
+  const labelX      = Math.max(5,   9   / k);
+  const labelY      = Math.max(-6, -5   / k);
 
   d3.selectAll('.city-label')
     .style('font-size', fontSize + 'px')
     .attr('x', labelX)
     .attr('y', labelY);
 
-  d3.selectAll('.city-ring-outer')
-    .attr('r', ringR)
-    .style('stroke-width', strokeW + 'px');
+  d3.selectAll('.city-marker:not(.active) .city-ring-outer')
+    .attr('r', ringR).style('stroke-width', strokeW + 'px');
+  d3.selectAll('.city-marker.active .city-ring-outer')
+    .attr('r', activeRingR).style('stroke-width', strokeW + 'px');
 
-  // Normal dots
+  d3.selectAll('.city-marker:not(.active) .city-ring-inner').attr('r', innerR);
+  d3.selectAll('.city-marker.active .city-ring-inner').attr('r', activeInnerR);
+
+  d3.selectAll('.city-pulse').attr('r', pulseR);
+
   d3.selectAll('.city-marker:not(.active) .city-dot').attr('r', dotR);
-  // Active dot stays slightly larger
-  d3.selectAll('.city-marker.active .city-dot').attr('r', activeR);
+  d3.selectAll('.city-marker.active .city-dot').attr('r', activeDotR);
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1596,8 +1673,10 @@ function addCityMarker(city) {
     .attr('id', `city-${city.id}`)
     .attr('transform', `translate(${cx},${cy})`);
 
-  g.append('circle').attr('r', Math.max(5, 11 / k)).attr('class', 'city-ring-outer').style('stroke-width', Math.max(0.3, 1 / k) + 'px');
-  g.append('circle').attr('r', Math.max(2, 4 / k)).attr('class', 'city-dot').attr('filter', 'url(#glow)');
+  g.append('circle').attr('class','city-pulse').attr('r', Math.max(3, 6 / k));
+  g.append('circle').attr('class','city-ring-outer').attr('r', Math.max(5, 11 / k)).style('stroke-width', Math.max(0.3, 1 / k) + 'px');
+  g.append('circle').attr('class','city-ring-inner').attr('r', Math.max(3, 7 / k));
+  g.append('circle').attr('class','city-dot').attr('r', Math.max(2, 3.5 / k)).attr('filter', 'url(#glow)');
   g.append('text').attr('class', 'city-label').style('font-size', Math.max(6, 9.5 / k) + 'px').attr('x', Math.max(5, 9 / k)).attr('y', Math.max(-6, -5 / k)).text(city.name);
   g.on('click', () => selectCity(city));
 }
