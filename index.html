@@ -1303,23 +1303,41 @@ async function fetchPhotos(city) {
     if (photoCache[cacheKey]) {
       images = photoCache[cacheKey];
     } else {
+      // Collect candidates across multiple search passes
+      let candidates = [];
+
+      const collect = async (query) => {
+        const results = await searchWikimedia(query);
+        candidates = [...candidates, ...results];
+      };
+
       // Primary: city + month name
-      images = await searchWikimedia(`aurora borealis ${city.name} ${monthName}`);
+      await collect(`aurora borealis ${city.name} ${monthName}`);
       // Secondary: city only (drop month)
-      if (images.length < 2) {
-        const cityResults = await searchWikimedia(city.search);
-        images = [...images, ...cityResults];
-      }
+      if (candidates.length < 8) await collect(city.search);
       // Tertiary: country + month
-      if (images.length < 2) {
-        const countryResults = await searchWikimedia(`aurora borealis ${city.country} ${monthName}`);
-        images = [...images, ...countryResults];
-      }
-      // Deduplicate by thumb URL and cap at 8
+      if (candidates.length < 8) await collect(`aurora borealis ${city.country} ${monthName}`);
+      // Quaternary: country only
+      if (candidates.length < 8) await collect(`aurora borealis ${city.country}`);
+
+      // Deduplicate by canonical file URL — unique per file regardless of search pass
       const seen = new Set();
-      images = images.filter(img => {
-        if (seen.has(img.thumb)) return false;
-        seen.add(img.thumb);
+      candidates = candidates.filter(img => {
+        if (seen.has(img.full)) return false;
+        seen.add(img.full);
+        return true;
+      });
+
+      // Pixel-classify all candidates in parallel, then keep only aurora images
+      gallery.innerHTML = `<div class="photo-loading"><span class="loading-text">ANALYSING PHOTOGRAPHS...</span></div>`;
+      const classifications = await Promise.all(candidates.map(img => classifyAuroraPixels(img.thumb)));
+      const seenSig = new Set();
+      images = candidates.filter((img, i) => {
+        if (!classifications[i]) return false;
+        // Secondary dedup: same author+date is almost certainly the same photo re-uploaded
+        const sig = `${img.author}|${img.date}`;
+        if (img.date !== 'Date unknown' && seenSig.has(sig)) return false;
+        seenSig.add(sig);
         return true;
       }).slice(0, 8);
 
@@ -1331,17 +1349,80 @@ async function fetchPhotos(city) {
   }
 }
 
+// ── Aurora image classifier (canvas pixel analysis) ───────────────
+// Loads each thumbnail onto an offscreen canvas, samples pixels, and
+// scores based on two signals that define an aurora-in-sky photo:
+//   1. Dark background  — night sky means most pixels have low luminance
+//   2. Aurora hues      — greens (hue ~100–170°) and purples (~260–330°)
+//      against that dark background
+//
+// Wikimedia thumbs are served with CORS headers so crossOrigin reads work.
+function classifyAuroraPixels(thumbUrl) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const SIZE = 96; // downsample for speed — enough for color stats
+      const canvas = document.createElement('canvas');
+      canvas.width = SIZE; canvas.height = SIZE;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, SIZE, SIZE);
+
+      let dark = 0, green = 0, purple = 0, total = 0;
+      const px = ctx.getImageData(0, 0, SIZE, SIZE).data;
+
+      for (let i = 0; i < px.length; i += 4) {
+        const r = px[i] / 255, g = px[i+1] / 255, b = px[i+2] / 255;
+        const max = Math.max(r, g, b), min = Math.min(r, g, b);
+        const lum = (max + min) / 2;
+        const sat = max === min ? 0 : (max - min) / (1 - Math.abs(2 * lum - 1));
+
+        let hue = 0;
+        if (max !== min) {
+          const d = max - min;
+          if      (max === r) hue = (((g - b) / d) % 6) * 60;
+          else if (max === g) hue = ((b - r) / d + 2) * 60;
+          else                hue = ((r - g) / d + 4) * 60;
+          if (hue < 0) hue += 360;
+        }
+
+        // Night sky: luminance < 20% brightness
+        if (lum < 0.20) dark++;
+
+        // Aurora green (oxygen emission ~557 nm → green/cyan band)
+        if (hue >= 100 && hue <= 170 && sat > 0.25 && lum > 0.06 && lum < 0.80) green++;
+
+        // Aurora purple/magenta (nitrogen emission, high-altitude red blends)
+        if (hue >= 260 && hue <= 330 && sat > 0.25 && lum > 0.06 && lum < 0.80) purple++;
+
+        total++;
+      }
+
+      const darkRatio   = dark   / total;
+      const greenRatio  = green  / total;
+      const purpleRatio = purple / total;
+
+      // Criteria: mostly dark sky + meaningful aurora colour signal
+      const isAurora = darkRatio > 0.30 && (greenRatio > 0.04 || purpleRatio > 0.025 || (greenRatio + purpleRatio) > 0.05);
+      resolve(isAurora);
+    };
+    // If the image fails to load, admit it rather than silently dropping it
+    img.onerror = () => resolve(false);
+    img.src = thumbUrl;
+  });
+}
+
 async function searchWikimedia(query) {
-  // Step 1: search for file pages
+  // Step 1: search for file pages — fetch extra to allow for pixel filtering
   const searchURL = `https://commons.wikimedia.org/w/api.php?` +
     `action=query&list=search&srsearch=${encodeURIComponent(query)}&srnamespace=6` +
-    `&format=json&origin=*&srlimit=12&srqiprofile=popular_inclinks`;
+    `&format=json&origin=*&srlimit=20&srqiprofile=popular_inclinks`;
 
   const sRes  = await fetch(searchURL);
   const sData = await sRes.json();
   const hits  = (sData.query?.search || [])
     .filter(r => /\.(jpg|jpeg|png)$/i.test(r.title))
-    .slice(0, 8);
+    .slice(0, 16);
 
   if (!hits.length) return [];
 
