@@ -1,0 +1,22 @@
+{
+  "name": "claude-aurora",
+  "version": "1.0.0",
+  "description": "An interactive world map for exploring aurora borealis viewing conditions by location and time of year.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.103.0",
+    "d3": "^7.9.0",
+    "topojson-client": "^3.1.0"
+  },
+  "devDependencies": {
+    "vite": "^8.0.8"
+  }
+}
