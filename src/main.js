@@ -317,9 +317,26 @@ function repositionMarkers() {
 // ═══════════════════════════════════════════════════════════════════
 //  City Selection
 // ═══════════════════════════════════════════════════════════════════
+function panToCity(city) {
+  const [cx, cy] = projection([city.lng, city.lat]);
+  const currentT = d3.zoomTransform(mapSvg.node());
+  const W = mapSvg.node().clientWidth  || mapSvg.node().getBoundingClientRect().width;
+  const H = mapSvg.node().clientHeight || mapSvg.node().getBoundingClientRect().height;
+  // Map point in screen space given current transform
+  const sx = currentT.applyX(cx);
+  const sy = currentT.applyY(cy);
+  // Only pan if city is outside the visible viewport
+  const pad = 60;
+  if (sx < pad || sx > W - pad || sy < pad || sy > H - pad) {
+    mapSvg.transition().duration(1600)
+      .call(zoomBehavior.translateTo, cx, cy);
+  }
+}
+
 function selectCity(city) {
   selectedCity = city;
   setActiveCityMarker(city);
+  panToCity(city);
 
   document.getElementById('welcome-state').style.display = 'none';
   document.getElementById('city-state').style.display    = 'flex';
