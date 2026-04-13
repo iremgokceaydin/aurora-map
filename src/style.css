@@ -485,6 +485,68 @@
             margin-top: 6px; text-align: right; letter-spacing: 0.08em;
         }
 
+        /* ── Image preview modal ────────────────────────── */
+        #photo-modal {
+            display: none;
+            position: fixed; inset: 0; z-index: 200;
+            background: rgba(4, 8, 18, 0.92);
+            backdrop-filter: blur(6px);
+            align-items: center; justify-content: center;
+        }
+        #photo-modal.open { display: flex; }
+        .photo-modal-inner {
+            position: relative;
+            max-width: min(880px, 92vw);
+            max-height: 90vh;
+            display: flex; flex-direction: column;
+            background: var(--bg-panel);
+            border: 1px solid var(--border-bright);
+            box-shadow: 0 24px 80px rgba(0,0,0,0.8);
+        }
+        .photo-modal-img {
+            display: block;
+            max-width: 100%;
+            max-height: 72vh;
+            object-fit: contain;
+            background: #020610;
+        }
+        .photo-modal-cap {
+            padding: 10px 14px;
+            display: flex; align-items: baseline;
+            justify-content: space-between; gap: 12px;
+            border-top: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+        .photo-modal-author {
+            font-size: 0.6rem; color: var(--text-primary);
+            font-weight: 600; white-space: nowrap;
+            overflow: hidden; text-overflow: ellipsis;
+        }
+        .photo-modal-meta {
+            font-size: 0.52rem; color: var(--text-dim);
+            white-space: nowrap;
+        }
+        .photo-modal-close {
+            position: absolute; top: 10px; right: 10px;
+            width: 28px; height: 28px;
+            background: rgba(7,11,20,0.85); border: 1px solid var(--border-bright);
+            color: var(--text-secondary); font-family: var(--font);
+            font-size: 14px; cursor: pointer; display: flex;
+            align-items: center; justify-content: center;
+            transition: all 0.15s; z-index: 1;
+        }
+        .photo-modal-close:hover { color: var(--text-primary); border-color: var(--accent-green); }
+        .photo-modal-download {
+            position: absolute; bottom: 45px; right: 10px;
+            width: 28px; height: 28px;
+            background: rgba(7,11,20,0.85); border: 1px solid var(--border-bright);
+            color: var(--text-secondary); font-size: 14px;
+            display: flex; align-items: center; justify-content: center;
+            text-decoration: none; transition: all 0.15s; z-index: 1;
+        }
+        .photo-modal-download:hover { color: var(--text-primary); border-color: var(--accent-green); }
+        .photo-thumb.clickable { cursor: zoom-in; }
+
         /* ── Community upload ────────────────────────────── */
         .upload-toggle-btn {
             font-family: var(--font); font-size: 0.52rem; letter-spacing: 0.12em;
@@ -530,7 +592,7 @@
             font-size: 0.48rem; color: var(--text-dim); letter-spacing: 0.08em; line-height: 1.7;
         }
         .upload-error { font-size: 0.52rem; color: #f44336; letter-spacing: 0.06em; min-height: 14px; }
-        .upload-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 2px; }
+        .upload-actions { display: flex; gap: 8px; justify-content: flex-end; margin: 2px 0px 12px; }
 
         .upload-cancel-btn {
             font-family: var(--font); font-size: 0.52rem; letter-spacing: 0.1em;
@@ -550,17 +612,123 @@
         .upload-status {
             font-size: 0.55rem; letter-spacing: 0.1em; text-align: center;
             padding: 10px; border: 1px solid var(--border); background: var(--bg-card);
+            margin: 0px 0px 8px;
         }
         .upload-status.success { color: var(--accent-green); border-color: rgba(0,255,163,0.3); }
         .upload-status.error   { color: #f44336; border-color: rgba(244,67,54,0.3); }
         .upload-status.loading { color: var(--text-secondary); }
 
         /* Community photo cards — same grid as Wikimedia but with a teal badge */
-        .photo-card.community { border-top: 2px solid rgba(0,180,216,0.5); }
+        /* ── Community photo cards ───────────────────────── */
+        .photo-card.community {
+            border: 1px solid var(--border);
+            transition: border-color 0.15s;
+        }
+        .photo-card.community.leading {
+            border-color: rgba(0,255,163,0.5);
+            box-shadow: 0 0 0 1px rgba(0,255,163,0.15);
+        }
         .community-badge {
             font-size: 0.42rem; letter-spacing: 0.12em; color: var(--accent-blue);
-            margin-bottom: 2px;
+            padding: 4px 7px 0;
         }
+        .community-cap {
+            padding: 6px 8px 4px;
+        }
+        .community-author {
+            font-size: 0.6rem; font-weight: 600;
+            color: var(--text-primary);
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .community-caption {
+            font-size: 0.52rem; color: var(--text-secondary);
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+            margin-bottom: 6px;
+        }
+
+        /* Vote row */
+        .vote-row {
+            display: flex; align-items: center; gap: 6px;
+            padding: 0 8px 6px;
+        }
+        .vote-btn {
+            display: flex; align-items: center; gap: 4px;
+            font-family: var(--font); font-size: 0.55rem;
+            font-weight: 600; letter-spacing: 0.05em;
+            padding: 4px 8px; border: 1px solid; cursor: pointer;
+            border-radius: 3px; transition: all 0.15s; background: transparent;
+            line-height: 1;
+        }
+        .vote-btn.up {
+            color: var(--accent-green);
+            border-color: rgba(0,255,163,0.3);
+            background: rgba(0,255,163,0.06);
+        }
+        .vote-btn.up:hover, .vote-btn.up.active {
+            background: rgba(0,255,163,0.14);
+            border-color: var(--accent-green);
+        }
+        .vote-btn.down {
+            color: var(--accent-purple);
+            border-color: rgba(157,113,255,0.25);
+            background: rgba(157,113,255,0.05);
+        }
+        .vote-btn.down:hover, .vote-btn.down.active {
+            background: rgba(157,113,255,0.12);
+            border-color: var(--accent-purple);
+        }
+        .vote-state-badge {
+            margin-left: auto;
+            font-family: var(--font); font-size: 0.46rem;
+            letter-spacing: 0.1em; padding: 3px 7px;
+            border: 1px solid var(--border);
+            color: var(--text-dim); background: transparent;
+            white-space: nowrap;
+        }
+        .vote-state-badge.rising  { color: var(--accent-blue);   border-color: rgba(0,180,216,0.35); }
+        .vote-state-badge.leading { color: var(--accent-green);  border-color: rgba(0,255,163,0.4); }
+
+        /* Reward slider */
+        .reward-slider-wrap {
+            padding: 6px 8px 10px;
+            border-top: 1px solid var(--border);
+        }
+        .reward-slider-label {
+            font-size: 0.44rem; letter-spacing: 0.14em;
+            color: var(--text-dim); margin-bottom: 6px;
+        }
+        .reward-slider-track {
+            position: relative; height: 6px;
+            background: var(--border); border-radius: 3px;
+            margin-bottom: 4px;
+        }
+        .reward-slider-fill {
+            position: absolute; top: 0; left: 0; height: 100%;
+            border-radius: 3px;
+            background: linear-gradient(to right, #00ffa3, #00b4d8, #9d71ff);
+            transition: width 0.4s ease;
+        }
+        .reward-slider-thumb {
+            position: absolute; top: 50%;
+            width: 10px; height: 10px;
+            background: #fff; border-radius: 50%;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 0 6px rgba(0,255,163,0.7);
+            transition: left 0.4s ease;
+        }
+        .reward-slider-plane {
+            position: absolute; right: -22px; top: 50%;
+            transform: translateY(-50%);
+            font-size: 14px; line-height: 1;
+            transition: opacity 0.3s, filter 0.3s;
+        }
+        .reward-slider-footer {
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .reward-slider-pct {
+            font-size: 0.5rem; color: var(--text-dim); letter-spacing: 0.06em;
+        }
+        .reward-slider-pct.leading { color: var(--accent-green); }
 
         /* ── Aurora Oval Toggle ──────────────────────────── */
         #aurora-canvas {

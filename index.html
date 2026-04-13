@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Aurora Map</title>
+    <link rel="stylesheet" href="/src/style.css">
     <script type="module" src="/src/main.js"></script>
 </head>
 <body>
@@ -242,6 +243,19 @@
     </div><!-- /panel-content -->
   </div><!-- /data-panel -->
 </div><!-- /app-body -->
+
+<!-- Image preview modal -->
+<div id="photo-modal">
+  <div class="photo-modal-inner">
+    <button class="photo-modal-close" id="photo-modal-close">✕</button>
+    <img class="photo-modal-img" id="photo-modal-img" alt="">
+    <button class="photo-modal-download" id="photo-modal-download" title="Download photo">↓</button>
+    <div class="photo-modal-cap">
+      <span class="photo-modal-author" id="photo-modal-author"></span>
+      <span class="photo-modal-meta" id="photo-modal-meta"></span>
+    </div>
+  </div>
+</div>
 
 </body>
 </html>

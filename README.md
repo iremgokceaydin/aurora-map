@@ -43,15 +43,87 @@ Search and add any city worldwide via the location input in the panel. Custom ma
 
 ### Aurora Photo Gallery
 - Pulls aurora photos from Wikimedia Commons for the selected city and month
-- Displays up to 6 photos with hover zoom and a lightbox-style expand view
+- Canvas-based pixel classifier validates each image before display — checks for dark sky (night) and aurora-characteristic hues (green 100–170°, purple 260–330°) to filter out non-aurora results
+- Falls back through multiple search queries (city+month → city → country+month → country) to ensure enough results
+- Deduplicates by canonical file URL and author+date signature across search passes
+
+### Community Photo Uploads
+- Any visitor can upload their own aurora photo for a specific city and month
+- Upload accepts JPG, PNG, and WEBP up to 5 MB
+- The same pixel classifier runs on the upload before it is accepted — images that don't show aurora in a night sky are rejected with an error message
+- Uploader name and caption are optional
+- Photos are stored in Supabase Storage and metadata in a Postgres table
+- Community photos appear below the Wikimedia gallery, sorted by net votes
+
+### Content Moderation
+- Every community upload is routed through a **Supabase Edge Function** (`moderate-photo`) before being published
+- The Edge Function calls the **Google Cloud Vision SafeSearch API**, which classifies the image across five categories: adult, spoof, medical, violence, and racy
+- If any category scores `LIKELY` or higher, the image is rejected: the file is deleted from Storage and the upload returns a 422 with a human-readable reason
+- Images that pass SafeSearch are marked `status = 'approved'` and become visible in the gallery
+- The client-side pixel classifier (dark sky + aurora hues) runs first as a fast pre-filter before the upload even reaches the server, reducing unnecessary API calls
+
+### Community Voting & Aurora Flight Challenge
+- Each community photo has **▲ upvote** and **▼ downvote** buttons
+- Voting is anonymous — a session ID is generated and persisted in `localStorage` so each browser gets one vote per photo
+- Clicking your active vote again removes it; clicking the opposite flips it
+- A **FREE FLIGHT PROGRESS** slider below each photo shows how close that photo is to winning the reward
+  - Slider fills with an aurora gradient (green → cyan → purple)
+  - An Icelandair plane icon sits at the right end — its opacity and glow increase as the slider fills
+  - Uses a logarithmic scale so early votes move the slider visibly (1 vote ≈ 15%, 10 votes ≈ 50%, 100 votes = 100%)
+- State badges: `LOW VOTES` / `✨ RISING` / `🏆 LEADING`
+- The leading photo's card gets a green border glow
+- The top-voted photo wins a free Icelandair flight to see the aurora
 
 ### Kp Reference Tooltip
 - Info button in the header opens a Kp scale reference table (0–9) with descriptions and visibility ranges
 
+## Supabase Schema
+
+```sql
+-- Uploaded photos
+create table aurora_photos (
+  id          uuid primary key default gen_random_uuid(),
+  city_id     text not null,
+  city_name   text not null,
+  month       int  not null check (month between 0 and 11),
+  file_path   text not null,
+  public_url  text not null,
+  uploader    text,
+  description text,
+  uploaded_at timestamptz default now(),
+  upvotes     int not null default 0,
+  downvotes   int not null default 0,
+  net_votes   int generated always as (upvotes - downvotes) stored
+);
+
+-- One vote per session per photo
+create table aurora_photo_votes (
+  id          uuid primary key default gen_random_uuid(),
+  photo_id    uuid not null references aurora_photos(id) on delete cascade,
+  session_id  text not null,
+  value       smallint not null check (value in (1, -1)),
+  voted_at    timestamptz default now(),
+  unique (photo_id, session_id)
+);
+```
+
+Vote counts are maintained by a `cast_vote` Postgres RPC function (`security definer`) that atomically upserts the vote and recounts upvotes/downvotes from scratch, exposed automatically by Supabase as `POST /rest/v1/rpc/cast_vote`.
+
 ## Stack
 
-- Vanilla HTML/CSS/JS — no build step required, open `index.html` directly in a browser
+- [Vite](https://vitejs.dev/) — build tool and dev server
 - [D3.js v7](https://d3js.org/) — map rendering and data visualization
 - [TopoJSON](https://github.com/topojson/topojson) — world country boundaries
+- [Supabase](https://supabase.com/) — Postgres database, file storage, and REST API for community uploads and voting
 - [NOAA SWPC API](https://www.swpc.noaa.gov/) — live planetary Kp index
 - [Wikimedia Commons API](https://commons.wikimedia.org/) — aurora photographs
+- [Google Cloud Vision SafeSearch](https://cloud.google.com/vision/docs/safesearch) — content moderation for community uploads
+
+## Setup
+
+```bash
+npm install
+cp .env.example .env
+# fill in VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY
+npm run dev
+```

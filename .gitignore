@@ -1,5 +1,7 @@
 .DS_Store
 .claude/
+.vscode/
 .env
 node_modules/
 dist/
+supabase/.temp/

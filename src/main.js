@@ -1,4 +1,3 @@
-import './style.css';
 import * as d3 from 'd3';
 import * as topojson from 'topojson-client';
 import { createClient } from '@supabase/supabase-js';
@@ -6,9 +5,9 @@ import { createClient } from '@supabase/supabase-js';
 // ═══════════════════════════════════════════════════════════════════
 //  SUPABASE CONFIG — set these in .env (never commit real values)
 // ═══════════════════════════════════════════════════════════════════
-const SUPABASE_URL  = import.meta.env.VITE_SUPABASE_URL  || '';
-const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON || '';
-const sb = SUPABASE_URL ? createClient(SUPABASE_URL, SUPABASE_ANON) : null;
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL             || '';
+const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || '';
+const sb = SUPABASE_URL ? createClient(SUPABASE_URL, SUPABASE_KEY) : null;
 
 // ═══════════════════════════════════════════════════════════════════
 //  AURORA MAP · Data & Constants
@@ -214,18 +213,19 @@ function initMap() {
   const grat = d3.geoGraticule().step([30, 30]);
   mapG.append('path').datum(grat()).attr('class','graticule').attr('d', pathGenerator);
 
-  // Auroral zone band (60°N – 75°N)
-  const auroralBand = {
+  // Auroral zone bands — borealis (60°N–75°N) and australis (60°S–75°S)
+  const makeAuroralBand = (latInner, latOuter) => ({
     type: 'Feature',
     geometry: {
       type: 'Polygon',
       coordinates: [[
-        ...d3.range(-180, 181, 3).map(lng => [lng, 75]),
-        ...d3.range(180, -181, -3).map(lng => [lng, 60])
+        ...d3.range(-180, 181, 3).map(lng => [lng, latOuter]),
+        ...d3.range(180, -181, -3).map(lng => [lng, latInner])
       ]]
     }
-  };
-  mapG.append('path').datum(auroralBand).attr('class','aurora-band').attr('d', pathGenerator);
+  });
+  mapG.append('path').datum(makeAuroralBand(60,  75)).attr('class','aurora-band').attr('d', pathGenerator);
+  mapG.append('path').datum(makeAuroralBand(-75, -60)).attr('class','aurora-band').attr('d', pathGenerator);
 
   // Countries
   fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json')
@@ -359,7 +359,6 @@ function renderCityHeader(city) {
 //  KP Bar Chart (D3)
 // ═══════════════════════════════════════════════════════════════════
 function renderKpChart(city) {
-  const svg    = document.getElementById('kp-chart');
   const contEl = document.getElementById('kp-section');
   const W      = contEl.clientWidth || 370;
   const H      = 155;
@@ -613,14 +612,14 @@ function classifyAuroraPixels(thumbUrl) {
           if (hue < 0) hue += 360;
         }
 
-        // Night sky: luminance < 20% brightness
-        if (lum < 0.20) dark++;
+        // Sky background: covers both dark night sky and dim twilight/overcast sky
+        if (lum < 0.35) dark++;
 
         // Aurora green (oxygen emission ~557 nm → green/cyan band)
-        if (hue >= 100 && hue <= 170 && sat > 0.25 && lum > 0.06 && lum < 0.80) green++;
+        if (hue >= 90 && hue <= 180 && sat > 0.20 && lum > 0.05 && lum < 0.85) green++;
 
-        // Aurora purple/magenta (nitrogen emission, high-altitude red blends)
-        if (hue >= 260 && hue <= 330 && sat > 0.25 && lum > 0.06 && lum < 0.80) purple++;
+        // Aurora purple/magenta/red (nitrogen emission, high-altitude red, pink blends)
+        if (((hue >= 260 && hue <= 360) || hue <= 20) && sat > 0.20 && lum > 0.05 && lum < 0.85) purple++;
 
         total++;
       }
@@ -629,8 +628,8 @@ function classifyAuroraPixels(thumbUrl) {
       const greenRatio  = green  / total;
       const purpleRatio = purple / total;
 
-      // Criteria: mostly dark sky + meaningful aurora colour signal
-      const isAurora = darkRatio > 0.30 && (greenRatio > 0.04 || purpleRatio > 0.025 || (greenRatio + purpleRatio) > 0.05);
+      // Criteria: predominantly sky background + meaningful aurora colour signal
+      const isAurora = darkRatio > 0.20 && (greenRatio > 0.03 || purpleRatio > 0.02 || (greenRatio + purpleRatio) > 0.04);
       resolve(isAurora);
     };
     // If the image fails to load, admit it rather than silently dropping it
@@ -812,7 +811,19 @@ function initUploadForm() {
     submitBtn.disabled = true;
     metaEl.textContent = 'ANALYSING IMAGE…';
 
-    const isAurora = await classifyAuroraPixels(url);
+    let isAurora = false;
+    try {
+      isAurora = await classifyAuroraPixels(url);
+    } catch (classifyErr) {
+      URL.revokeObjectURL(url);
+      errorEl.textContent = 'IMAGE ANALYSIS FAILED — PLEASE TRY AGAIN OR USE A DIFFERENT FILE';
+      preview.style.display = 'none';
+      dropLabel.style.display = 'flex';
+      fields.style.display = 'none';
+      metaEl.textContent = '';
+      uploadFile = null;
+      return;
+    }
     URL.revokeObjectURL(url);
 
     if (!isAurora) {
@@ -820,6 +831,7 @@ function initUploadForm() {
       preview.style.display = 'none';
       dropLabel.style.display = 'flex';
       fields.style.display = 'none';
+      metaEl.textContent = '';
       uploadFile = null;
       return;
     }
@@ -832,36 +844,67 @@ function initUploadForm() {
   submitBtn.addEventListener('click', async () => {
     if (!uploadFile || !selectedCity) return;
     submitBtn.disabled = true;
-    statusEl.style.display = 'block';
-    statusEl.className = 'upload-status loading';
-    statusEl.textContent = 'UPLOADING…';
     errorEl.textContent = '';
+    statusEl.style.display = 'block';
 
     try {
-      const ext   = uploadFile.name.split('.').pop().toLowerCase().replace('jpg','jpeg');
-      const path  = `${selectedCity.id}/${selectedMonth}/${Date.now()}.${ext}`;
+      // Step 1 — upload file to Storage
+      statusEl.className = 'upload-status loading';
+      statusEl.textContent = 'UPLOADING…';
+
+      const ext  = uploadFile.name.split('.').pop().toLowerCase().replace('jpg', 'jpeg');
+      const path = `${selectedCity.id}/${selectedMonth}/${Date.now()}.${ext}`;
 
       const { error: upErr } = await sb.storage
         .from('aurora-photos')
         .upload(path, uploadFile, { contentType: uploadFile.type, upsert: false });
 
-      if (upErr) throw upErr;
+      if (upErr) {
+        const msg = upErr.message || '';
+        if (msg.includes('too large') || msg.includes('413') || uploadFile.size > 5 * 1024 * 1024) {
+          throw new Error('FILE TOO LARGE — SUPABASE STORAGE LIMIT IS 5 MB. PLEASE COMPRESS YOUR IMAGE AND TRY AGAIN.');
+        }
+        throw new Error(`STORAGE UPLOAD FAILED — ${msg.toUpperCase() || 'CHECK YOUR CONNECTION AND TRY AGAIN'}`);
+      }
 
       const { data: urlData } = sb.storage.from('aurora-photos').getPublicUrl(path);
 
-      const { error: dbErr } = await sb
-        .from('aurora_photos')
-        .insert({
-          city_id:    selectedCity.id,
-          city_name:  selectedCity.name,
-          month:      selectedMonth,
-          file_path:  path,
-          public_url: urlData.publicUrl,
-          uploader:   document.getElementById('upload-name').value.trim() || null,
-          description:document.getElementById('upload-desc').value.trim() || null,
-        });
+      // Step 2 — call Edge Function for SafeSearch moderation + DB insert
+      statusEl.textContent = 'ANALYSING CONTENT…';
 
-      if (dbErr) throw dbErr;
+      const fnUrl = `${SUPABASE_URL}/functions/v1/moderate-photo`;
+      let res;
+      try {
+        res = await fetch(fnUrl, {
+          method:  'POST',
+          headers: {
+            'Content-Type':  'application/json',
+            'Authorization': `Bearer ${SUPABASE_KEY}`,
+          },
+          body: JSON.stringify({
+            city_id:     selectedCity.id,
+            city_name:   selectedCity.name,
+            month:       selectedMonth,
+            file_path:   path,
+            public_url:  urlData.publicUrl,
+            uploader:    document.getElementById('upload-name').value.trim() || null,
+            description: document.getElementById('upload-desc').value.trim() || null,
+          }),
+        });
+      } catch (networkErr) {
+        // Clean up the orphaned file in storage
+        await sb.storage.from('aurora-photos').remove([path]);
+        throw new Error('NETWORK ERROR — COULD NOT REACH MODERATION SERVICE. PLEASE CHECK YOUR CONNECTION.');
+      }
+
+      const result = await res.json();
+
+      if (!res.ok) {
+        if (res.status === 422) {
+          throw new Error('PHOTO DID NOT PASS CONTENT MODERATION — PLEASE UPLOAD AN APPROPRIATE AURORA PHOTOGRAPH.');
+        }
+        throw new Error(result.error?.toUpperCase() || `MODERATION SERVICE ERROR (${res.status})`);
+      }
 
       statusEl.className = 'upload-status success';
       statusEl.textContent = 'PHOTO SUBMITTED — THANK YOU!';
@@ -872,10 +915,151 @@ function initUploadForm() {
 
     } catch (err) {
       statusEl.className = 'upload-status error';
-      statusEl.textContent = `UPLOAD FAILED — ${err.message?.toUpperCase() || 'UNKNOWN ERROR'}`;
+      statusEl.textContent = err.message || 'UPLOAD FAILED — UNKNOWN ERROR';
       submitBtn.disabled = false;
     }
   });
+}
+
+// ── Anonymous session ID (persisted in localStorage) ──────────────
+function getSessionId() {
+  let id = localStorage.getItem('aurora_session_id');
+  if (!id) {
+    id = crypto.randomUUID();
+    localStorage.setItem('aurora_session_id', id);
+  }
+  return id;
+}
+
+// Threshold of net votes at which the slider is considered "full" (100%)
+// Using a log scale so early votes move the slider noticeably,
+// while later votes require more effort — mimics a real reward system.
+const VOTE_THRESHOLD = 100;
+
+function votePct(net) {
+  if (net <= 0) return 0;
+  // log scale: 1 vote → ~10%, 10 → ~50%, 100 → 100%
+  return Math.min(1, Math.log10(net + 1) / Math.log10(VOTE_THRESHOLD + 1));
+}
+
+function voteStateBadge(net) {
+  if (net >= VOTE_THRESHOLD * 0.8) return { label: '🏆 LEADING', cls: 'leading' };
+  if (net >= VOTE_THRESHOLD * 0.3) return { label: '✨ RISING',  cls: 'rising'  };
+  return                                   { label: 'LOW VOTES',  cls: ''        };
+}
+
+function buildCommunityCard(row, myVote) {
+  const author  = row.uploader || 'Anonymous';
+  const caption = row.description || (row.uploaded_at ? row.uploaded_at.slice(0, 10) : '');
+  const up      = row.upvotes   || 0;
+  const down    = row.downvotes || 0;
+  const net     = row.net_votes ?? (up - down);
+  const pct     = votePct(net);
+  const pctDisp = Math.round(pct * 100);
+  const state   = voteStateBadge(net);
+  const planeOpacity = 0.25 + pct * 0.75;
+  const planeFilter  = pct > 0.8 ? 'drop-shadow(0 0 4px #00ffa3)' : 'none';
+
+  const card = document.createElement('div');
+  card.className = `photo-card community${state.cls === 'leading' ? ' leading' : ''}`;
+  card.dataset.photoId = row.id;
+
+  card.innerHTML = `
+    <div class="community-badge">⬡ AURORA PHOTO</div>
+    <img class="photo-thumb" src="${row.public_url}" alt="Aurora photo by ${author}" loading="lazy">
+    <div class="community-cap">
+      <div class="community-author">${author}</div>
+      <div class="community-caption">${caption}</div>
+    </div>
+    <div class="vote-row">
+      <button class="vote-btn up${myVote === 1 ? ' active' : ''}" data-value="1">▲ <span class="up-count">${up}</span></button>
+      <button class="vote-btn down${myVote === -1 ? ' active' : ''}" data-value="-1">▼ <span class="down-count">${down}</span></button>
+      <span class="vote-state-badge ${state.cls}">${state.label}</span>
+    </div>
+    <div class="reward-slider-wrap">
+      <div class="reward-slider-label">FREE FLIGHT PROGRESS</div>
+      <div class="reward-slider-track" style="margin-right: 28px; position: relative;">
+        <div class="reward-slider-fill" style="width: ${pctDisp}%"></div>
+        <div class="reward-slider-thumb" style="left: ${pctDisp}%"></div>
+        <span class="reward-slider-plane" style="opacity:${planeOpacity};filter:${planeFilter}">✈</span>
+      </div>
+      <div class="reward-slider-footer">
+        <span class="reward-slider-pct ${state.cls === 'leading' ? 'leading' : ''}">${pctDisp}%</span>
+      </div>
+    </div>
+  `;
+
+  card.querySelector('.photo-thumb').classList.add('clickable');
+  card.querySelector('.photo-thumb').addEventListener('click', () =>
+    openPhotoModal(row.public_url, author, caption));
+
+  // Vote button handlers
+  card.querySelectorAll('.vote-btn').forEach(btn => {
+    btn.addEventListener('click', () => castVote(row.id, parseInt(btn.dataset.value), card));
+  });
+
+  return card;
+}
+
+async function castVote(photoId, value, card) {
+  if (!sb) return;
+  const sessionId = getSessionId();
+
+  const upBtn   = card.querySelector('.vote-btn.up');
+  const downBtn = card.querySelector('.vote-btn.down');
+  const wasUp   = upBtn.classList.contains('active');
+  const wasDown = downBtn.classList.contains('active');
+
+  // Pass 0 to remove vote when clicking the already-active button
+  const rpcValue = (value === 1 && wasUp) || (value === -1 && wasDown) ? 0 : value;
+
+  upBtn.disabled = true;
+  downBtn.disabled = true;
+
+  const { data, error } = await sb.rpc('cast_vote', {
+    p_photo_id:   photoId,
+    p_session_id: sessionId,
+    p_value:      rpcValue,
+  });
+
+  upBtn.disabled = false;
+  downBtn.disabled = false;
+
+  if (error) {
+    console.error('Vote failed:', error.message, error);
+    return;
+  }
+
+  data.net_votes = (data.upvotes || 0) - (data.downvotes || 0);
+  const finalValue = data.my_vote;
+
+  // Update counts in DOM
+  card.querySelector('.up-count').textContent   = data.upvotes;
+  card.querySelector('.down-count').textContent = data.downvotes;
+
+  const net     = data.net_votes ?? (data.upvotes - data.downvotes);
+  const pct     = votePct(net);
+  const pctDisp = Math.round(pct * 100);
+  const state   = voteStateBadge(net);
+
+  card.querySelector('.reward-slider-fill').style.width = `${pctDisp}%`;
+  card.querySelector('.reward-slider-thumb').style.left = `${pctDisp}%`;
+  card.querySelector('.reward-slider-pct').textContent  = `${pctDisp}%`;
+  card.querySelector('.reward-slider-pct').className    =
+    `reward-slider-pct${state.cls === 'leading' ? ' leading' : ''}`;
+
+  const plane = card.querySelector('.reward-slider-plane');
+  plane.style.opacity = String(0.25 + pct * 0.75);
+  plane.style.filter  = pct > 0.8 ? 'drop-shadow(0 0 4px #00ffa3)' : 'none';
+
+  const badge = card.querySelector('.vote-state-badge');
+  badge.textContent  = state.label;
+  badge.className    = `vote-state-badge ${state.cls}`;
+
+  card.classList.toggle('leading', state.cls === 'leading');
+
+  upBtn.classList.toggle('active',   finalValue === 1);
+  downBtn.classList.toggle('active', finalValue === -1);
 }
 
 async function loadCommunityPhotos(city, month) {
@@ -884,36 +1068,34 @@ async function loadCommunityPhotos(city, month) {
 
   container.innerHTML = '';
 
+  // Fetch photos sorted by net votes descending
   const { data, error } = await sb
     .from('aurora_photos')
     .select('*')
     .eq('city_id', city.id)
     .eq('month', month)
-    .order('uploaded_at', { ascending: false })
+    .order('upvotes', { ascending: false })
     .limit(12);
 
   if (error || !data?.length) return;
+
+  // Fetch this session's existing votes for these photos in one query
+  const photoIds  = data.map(r => r.id);
+  const sessionId = getSessionId();
+  const { data: myVotes } = await sb
+    .from('aurora_photo_votes')
+    .select('photo_id, value')
+    .eq('session_id', sessionId)
+    .in('photo_id', photoIds);
+
+  const myVoteMap = {};
+  (myVotes || []).forEach(v => { myVoteMap[v.photo_id] = v.value; });
 
   const grid = document.createElement('div');
   grid.className = 'photo-grid';
 
   data.forEach(row => {
-    const card = document.createElement('div');
-    card.className = 'photo-card community';
-    const author = row.uploader || 'Anonymous';
-    const desc   = row.description ? `<div class="photo-date">${row.description}</div>` : '';
-    const date   = row.uploaded_at ? row.uploaded_at.slice(0, 10) : '';
-    card.innerHTML = `
-      <div class="community-badge">COMMUNITY PHOTO</div>
-      <img class="photo-thumb" src="${row.public_url}" alt="Aurora photo by ${author}" loading="lazy">
-      <div class="photo-cap">
-        <div class="photo-author">© ${author}</div>
-        ${desc}
-        <div class="photo-date">${date}</div>
-      </div>
-    `;
-    card.querySelector('.photo-thumb').addEventListener('click', () => window.open(row.public_url, '_blank', 'noopener'));
-    grid.appendChild(card);
+    grid.appendChild(buildCommunityCard(row, myVoteMap[row.id] ?? null));
   });
 
   container.appendChild(grid);
@@ -1225,7 +1407,7 @@ function initAddLocation() {
       dropdown.classList.add('open');
       return;
     }
-    results.forEach((r, i) => {
+    results.forEach(r => {
       const addr = r.address || {};
       const country = addr.country || '';
       const state   = addr.state || addr.county || addr.region || '';
@@ -1332,6 +1514,58 @@ function initAddLocation() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+//  Photo preview modal
+// ═══════════════════════════════════════════════════════════════════
+function openPhotoModal(url, author, meta) {
+  document.getElementById('photo-modal-img').src            = url;
+  document.getElementById('photo-modal-author').textContent = author;
+  document.getElementById('photo-modal-meta').textContent   = meta;
+  document.getElementById('photo-modal').classList.add('open');
+}
+
+function closePhotoModal() {
+  const modal = document.getElementById('photo-modal');
+  modal.classList.remove('open');
+  document.getElementById('photo-modal-img').src = '';
+}
+
+function initPhotoModal() {
+  document.getElementById('photo-modal-close').addEventListener('click', closePhotoModal);
+  document.getElementById('photo-modal').addEventListener('click', e => {
+    if (e.target === document.getElementById('photo-modal')) closePhotoModal();
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closePhotoModal();
+  });
+
+  document.getElementById('photo-modal-download').addEventListener('click', async e => {
+    e.preventDefault();
+    const url = document.getElementById('photo-modal-img').src;
+    if (!url) return;
+    const btn = e.currentTarget;
+    btn.textContent = '…';
+    try {
+      const blob = await fetch(url).then(r => r.blob());
+      const ext  = blob.type.split('/')[1] || 'jpg';
+      const a    = document.createElement('a');
+      a.href     = URL.createObjectURL(blob);
+      const author  = document.getElementById('photo-modal-author').textContent.trim();
+      const caption = document.getElementById('photo-modal-meta').textContent.trim();
+      const slug    = [author, caption, Date.now()]
+        .filter(Boolean)
+        .join('-')
+        .replace(/[^a-z0-9]+/gi, '-')
+        .toLowerCase();
+      a.download = `aurora-${slug}.${ext}`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } finally {
+      btn.textContent = '↓';
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
 //  Boot
 // ═══════════════════════════════════════════════════════════════════
 const customCities = [];
@@ -1342,6 +1576,7 @@ const customCities = [];
   initWelcomeList();
   initAddLocation();
   initUploadForm();
+  initPhotoModal();
 
   document.getElementById('back-btn').addEventListener('click', () => {
     selectedCity = null;
