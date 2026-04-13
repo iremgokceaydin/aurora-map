@@ -310,9 +310,11 @@
         }
         .add-location-btn:hover:not(:disabled) { background: rgba(0,255,163,0.18); }
         .add-location-btn:disabled { opacity: 0.35; cursor: default; }
+        .add-input-wrap { position: relative; flex: 1; min-width: 0; }
+        .add-input-wrap .add-location-input { width: 100%; }
         .add-dropdown {
             position: absolute; top: calc(100% + 2px); left: 0;
-            width: calc(100% - 68px); /* same width as input */
+            width: 100%;
             background: var(--bg-panel); border: 1px solid var(--border-bright);
             border-top: none; z-index: 50; display: none;
             max-height: 200px; overflow-y: auto;

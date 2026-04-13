@@ -130,10 +130,12 @@
         <div class="add-location-wrap">
           <div class="add-location-label">+ ADD LOCATION</div>
           <div class="add-location-row">
-            <input type="text" class="add-location-input" id="add-city-input"
-              placeholder="Search city name…" autocomplete="off" spellcheck="false">
+            <div class="add-input-wrap">
+              <input type="text" class="add-location-input" id="add-city-input"
+                placeholder="Search city name…" autocomplete="off" spellcheck="false">
+              <div class="add-dropdown" id="add-dropdown"></div>
+            </div>
             <button class="add-location-btn" id="add-city-btn" disabled>ADD</button>
-            <div class="add-dropdown" id="add-dropdown"></div>
           </div>
           <div class="add-error" id="add-error"></div>
         </div>

@@ -1436,7 +1436,14 @@ function initAddLocation() {
         `q=${encodeURIComponent(query)}&format=json&addressdetails=1&limit=6&featuretype=city`;
       const res  = await fetch(url, { headers: { 'Accept-Language': 'en' } });
       const data = await res.json();
-      renderDropdown(data);
+      const seen = new Set();
+      const deduped = data.filter(r => {
+        const key = `${r.name}|${r.address?.country_code}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      renderDropdown(deduped);
     } catch(e) {
       closeDropdown();
       showError('GEOCODE LOOKUP FAILED — CHECK CONNECTION');
