@@ -1,6 +1,9 @@
 # Aurora Map
 
-An interactive world map for exploring aurora borealis viewing conditions by location and time of year.
+An interactive world map for exploring aurora borealis viewing conditions and photos by location and time of year.
+
+<img width="1110" height="731" alt="image" src="https://github.com/user-attachments/assets/e76c29e4-3e07-48e3-be55-f0d4761a61ca" />
+
 
 ## Features
 
