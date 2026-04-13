@@ -80,6 +80,8 @@ Search and add any city worldwide via the location input in the panel. Custom ma
 ### Kp Reference Tooltip
 - Info button in the header opens a Kp scale reference table (0–9) with descriptions and visibility ranges
 
+https://github.com/user-attachments/assets/3b2267b7-fe0c-4cfc-8052-8eeb8beaeac8
+
 ## Supabase Schema
 
 ```sql
