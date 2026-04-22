@@ -463,8 +463,16 @@ function renderKpChart(city) {
     `${city.name.toUpperCase()} · AURORA VIEWING INDEX BY MONTH`;
   document.getElementById('kp-source-badge').textContent =
     Object.keys(liveKpMonthly).length > 0 ? 'NOAA + HISTORICAL' : 'HISTORICAL AVG';
-  // Show midnight-sun footnote for high-latitude cities (above ~60°N)
-  document.getElementById('kp-footnote').style.display = city.lat >= 60 ? 'block' : 'none';
+  // Show midnight-sun/day footnote for high-latitude cities (≥60° either hemisphere)
+  const footnoteEl = document.getElementById('kp-footnote');
+  if (Math.abs(city.lat) >= 60) {
+    footnoteEl.style.display = 'block';
+    footnoteEl.textContent = city.lat > 0
+      ? '† JUN/JUL suppressed: midnight sun limits dark-sky viewing at this latitude'
+      : '† DEC/JAN suppressed: midnight day limits dark-sky viewing at this latitude';
+  } else {
+    footnoteEl.style.display = 'none';
+  }
   // Update threshold legend
   document.getElementById('legend-threshold-city').textContent = city.name;
   document.getElementById('legend-threshold-kp').textContent   = city.minKp;
@@ -1326,34 +1334,37 @@ function initKpTooltip() {
 // Compute a Kp profile for an arbitrary latitude using the same
 // seasonal model as the built-in cities.
 function computeKpProfile(lat) {
-  // Geomagnetic latitude proxy: scale by distance from auroral oval (~67°N)
   const geomagLat = Math.abs(lat);
+  const southern  = lat < 0;
 
-  // Latitude factor: 1.0 at 70°N, tapering to ~0.15 at 40°N, ~0 below 35°N
+  // Latitude factor: 1.0 at 70°, tapering to ~0.15 at 40°, ~0 below 35°
   const latFactor = Math.max(0, Math.min(1, (geomagLat - 35) / 35));
 
-  // Midnight sun suppression for high latitudes (above ~60°N)
-  const midnightSun = geomagLat >= 60;
+  // Baseline shape in LOCAL seasonal terms (index 0 = local Jan = NH Jan / SH Jul)
+  // Equinoctial peaks at local Mar (idx 2) and Sep (idx 8); winter dip mid-summer
+  // localShape[i]: i=0 is local January (winter start NH, summer start SH)
+  const localShape = [0.75, 0.80, 0.95, 0.72, 0.45, 0.18, 0.15, 0.40, 1.00, 0.92, 0.82, 0.76];
 
-  // Baseline seasonal shape — Russell–McPherron equinoctial pattern
-  // Jan  Feb  Mar  Apr  May  Jun  Jul  Aug  Sep  Oct  Nov  Dec
-  const shape = [0.75, 0.80, 0.95, 0.72, 0.45, 0.18, 0.15, 0.40, 1.00, 0.92, 0.82, 0.76];
-
-  // Inside oval (≥67°N): October peak from polar-night + equinoctial combo
-  // Atlantic/European sector approximation for high latitudes
+  // High-latitude oval bonus: Oct (local) peak from polar-night + equinoctial
   if (geomagLat >= 67) {
-    shape[9] = 1.05; shape[8] = 0.98; shape[2] = 0.92;
+    localShape[9] = 1.05; localShape[8] = 0.98; localShape[2] = 0.92;
   }
-  // North of ~60°: suppress midnight sun months
-  if (midnightSun) {
-    shape[5] = 0.02; shape[6] = 0.02;
-    shape[4] = 0.15; shape[7] = 0.30;
+  // Polar midnight-sun / midnight-day suppression at high latitudes
+  if (geomagLat >= 60) {
+    // Local Jun/Jul = continuous daylight → near-zero aurora viewing
+    localShape[5] = 0.02; localShape[6] = 0.02;
+    localShape[4] = 0.15; localShape[7] = 0.30;
   }
 
-  // Peak Kp scales with geomagnetic latitude
   const peak = 1.2 + latFactor * 3.5;
+  const localProfile = localShape.map(s => parseFloat((s * peak).toFixed(2)));
 
-  return shape.map(s => parseFloat((s * peak).toFixed(2)));
+  // For southern hemisphere, rotate by 6 months so calendar months align correctly:
+  // local Jan (best winter) → calendar Jul, local Jul (midnight day) → calendar Jan
+  if (southern) {
+    return [...localProfile.slice(6), ...localProfile.slice(0, 6)];
+  }
+  return localProfile;
 }
 
 // Derive minKp threshold from latitude
